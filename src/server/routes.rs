@@ -5,11 +5,12 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{delete as delete_method, get, post};
 use axum::{Json, Router};
 use serde_json::json;
 
 use crate::server::error::ApiError;
+use crate::server::handlers;
 use crate::server::AppState;
 use crate::ui;
 
@@ -19,12 +20,25 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/assets/:name", get(asset))
         .route("/api/health", get(health))
         .route("/api/config", get(api_config))
+        .route(
+            "/api/libraries",
+            get(handlers::libraries::list).post(handlers::libraries::create),
+        )
+        .route("/api/libraries/active", get(handlers::libraries::active))
+        .route(
+            "/api/libraries/:name",
+            delete_method(handlers::libraries::delete),
+        )
+        .route(
+            "/api/libraries/:name/switch",
+            post(handlers::libraries::switch),
+        )
         .with_state(state)
 }
 
 async fn index(State(state): State<Arc<AppState>>) -> Html<String> {
-    // Active library name will be filled in by phase 5; for now show a placeholder.
-    Html(ui::render_index(&state.token, "default"))
+    let active = state.libraries.active().await;
+    Html(ui::render_index(&state.token, &active))
 }
 
 async fn asset(Path(name): Path<String>) -> Result<Response, ApiError> {

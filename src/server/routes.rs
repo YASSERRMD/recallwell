@@ -41,6 +41,15 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/ingest/:id/stream", get(handlers::ingest::stream))
         .route("/api/ask", post(handlers::ask::ask))
         .route("/api/source/:library/:doc_id", get(handlers::source::open))
+        .route(
+            "/api/history",
+            get(handlers::history::list).delete(handlers::history::clear),
+        )
+        .route("/api/history/search", get(handlers::history::search))
+        .route(
+            "/api/history/:id",
+            get(handlers::history::get).delete(handlers::history::delete),
+        )
         .with_state(state)
 }
 

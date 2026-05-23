@@ -15,6 +15,7 @@ use tokio::net::TcpListener;
 use tracing::info;
 
 use crate::config::Config;
+use crate::history::History;
 use crate::ingest::queue::IngestQueue;
 use crate::library::LibraryRegistry;
 
@@ -25,6 +26,7 @@ pub struct AppState {
     pub started_at: std::time::Instant,
     pub libraries: Arc<LibraryRegistry>,
     pub ingest: Arc<IngestQueue>,
+    pub history: Arc<History>,
 }
 
 /// Result of binding the server: addr to listen on plus the token.
@@ -61,6 +63,7 @@ pub async fn run(config: Arc<Config>) -> Result<()> {
         config.clone(),
         config.ingest.max_concurrent.max(1),
     );
+    let history = Arc::new(History::open(&config.history_db_path()?).await?);
 
     let state = Arc::new(AppState {
         config: config.clone(),
@@ -68,6 +71,7 @@ pub async fn run(config: Arc<Config>) -> Result<()> {
         started_at: std::time::Instant::now(),
         libraries,
         ingest,
+        history,
     });
 
     let app = routes::router(state.clone()).layer(middleware::from_fn_with_state(

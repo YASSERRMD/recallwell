@@ -33,6 +33,12 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/api/libraries/:name/switch",
             post(handlers::libraries::switch),
         )
+        .route(
+            "/api/ingest",
+            get(handlers::ingest::list).post(handlers::ingest::upload),
+        )
+        .route("/api/ingest/:id", get(handlers::ingest::status))
+        .route("/api/ingest/:id/stream", get(handlers::ingest::stream))
         .with_state(state)
 }
 

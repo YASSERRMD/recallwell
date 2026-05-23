@@ -116,10 +116,7 @@ pub fn run_libraries(overrides: &CliOverrides) -> Result<()> {
 
     println!("Libraries in {}:", dir.display());
     for (path, size) in entries {
-        let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("?");
+        let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
         println!("  {:<24}  {:>10}", name, format_bytes(size));
     }
     Ok(())

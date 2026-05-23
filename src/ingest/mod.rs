@@ -13,6 +13,7 @@ use anyhow::{anyhow, Result};
 use pagebridge::SourceKind;
 
 /// A document after format-specific parsing, ready for pagebridge.
+#[derive(Debug)]
 pub struct ParsedDocument {
     pub title: String,
     pub text: String,

@@ -2,41 +2,180 @@
 
 > Your knowledge, indexed and citable.
 
-A personal knowledge base built on [pagebridge](https://github.com/YASSERRMD/pagebridge).
-Ingest your PDFs, EPUBs, HTML, DOCX, and Markdown files; ask questions; get
-answers with real citations that link back to the original source.
+[![CI](https://github.com/yasserrmd/recallwell/actions/workflows/ci.yml/badge.svg)](https://github.com/yasserrmd/recallwell/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-**Status:** pre-alpha. Under active development.
+A personal knowledge base that runs as a single Rust binary on your laptop.
+Drag in your PDFs, EPUBs, HTML, DOCX, and Markdown; ask questions; get answers
+with real citations that link back to the original source.
 
-## What recallwell is
-
-A single Rust binary that runs on your laptop. It embeds an HTTP server, a
-SQLite database, a HTMX-based UI, and the pagebridge engine. You point it at
-your documents; it builds a hierarchical knowledge tree; you ask it questions;
-it answers with citations and lets you click through to the original passage.
+Built on [pagebridge](https://github.com/YASSERRMD/pagebridge) for hierarchical
+retrieval, [Groq](https://groq.com) for fast inference, [axum](https://github.com/tokio-rs/axum)
+for the local server, and HTMX + Alpine + Tailwind for a build-step-free UI.
 
 ## Why recallwell
 
-Vector RAG over a personal library has problems: uploads to a cloud service,
-weak citations, and a subscription bill. recallwell takes the other path:
+Most "ask my documents" tools either upload your library to a SaaS, give you
+weak citations, or want a subscription. recallwell is the opposite:
 
-- **Everything stays local.** Documents, summaries, embeddings, history — all
-  on your machine. Only the question and the top-relevant excerpts are sent to
-  Groq for synthesis.
-- **Citations are first-class.** Every answer comes with citations that link
-  back to the original document at the page or section.
-- **One binary, no setup.** Download, run, drag files in, ask questions.
-- **Your library, your way.** Multiple libraries for reading, work, recipes,
-  whatever you need.
+- **Everything stays local.** Documents, summaries, history, indices — all on
+  your machine. The only network traffic is the question plus the most relevant
+  excerpts sent to Groq for synthesis.
+- **Citations are first-class.** Every answer links back to the exact section
+  of the original document. Click a citation to open the source PDF at the
+  right page.
+- **One binary, no setup.** Download, run, open the browser. No Node, no
+  Python, no Docker.
+- **Multiple libraries.** "Reading", "work", "recipes" — each is its own
+  isolated SQLite database.
+- **Streaming answers.** Tokens arrive as they're generated, with the trace
+  available in a collapsible panel for the curious.
 
-## Quickstart (planned)
+## Quickstart
 
 ```bash
-# Download the binary for your platform from GitHub Releases
+# Download the binary for your platform from the Releases page
+# https://github.com/yasserrmd/recallwell/releases
+
+# Linux/macOS
+curl -L https://github.com/yasserrmd/recallwell/releases/latest/download/recallwell-v0.1.0-x86_64-unknown-linux-gnu.tar.gz \
+  | tar xz
 ./recallwell setup     # one-time, asks for your Groq API key
 ./recallwell           # starts the server, opens your browser
 ```
 
+When the server starts you'll see something like:
+
+```
+recallwell v0.1.0
+Server running at http://localhost:7676/?t=Kp9X2vRn8mQs7tWfZ3jY4hLc
+
+Browser opening automatically. Bookmark this URL for this session.
+Press Ctrl+C to stop.
+```
+
+The `?t=...` token is generated fresh on every server start. Anyone with the
+URL can access the server, so don't share it.
+
+## Configuration
+
+Config lives at:
+
+- Linux: `~/.config/recallwell/config.toml`
+- macOS: `~/Library/Application Support/com.recallwell.recallwell/config.toml`
+- Windows: `%APPDATA%\com\recallwell\recallwell\config.toml`
+
+```toml
+[groq]
+api_key = "gsk_..."
+synthesis_model = "llama-3.3-70b-versatile"
+navigation_model = "llama-3.1-8b-instant"
+
+[server]
+host = "127.0.0.1"
+port = 7676
+auto_open = true
+
+[ui]
+theme = "auto"   # "light", "dark", "auto"
+
+[ingest]
+max_concurrent = 2
+```
+
+CLI flags (`--data-dir`, `--port`, `--config`) and environment variables
+(`RECALLWELL_GROQ_API_KEY`, `RECALLWELL_DATA_DIR`, `RECALLWELL_PORT`) override
+the config file.
+
+## How it works
+
+```
+You drop a PDF into the UI
+  -> recallwell parses it with pdf-extract
+  -> hands the text to pagebridge.ingest_document
+  -> pagebridge builds a hierarchical tree of sections
+  -> requests summaries for each node from Groq
+
+You ask "what did I read about distributed consensus?"
+  -> pagebridge does BM25 over the SQLite index
+  -> navigates the tree with llama-3.1-8b-instant (fast)
+  -> synthesizes the answer with llama-3.3-70b-versatile (deep)
+  -> streams tokens + citations back to the browser
+
+You click a citation
+  -> recallwell opens the original PDF at the right page
+```
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl/Cmd K | focus the ask textarea |
+| Ctrl/Cmd L | open the library switcher |
+| Ctrl/Cmd / | show keyboard shortcuts help |
+| Esc | close overlays |
+
+## Privacy
+
+- Documents never leave your machine.
+- Summaries are generated by Groq using the question and the top-relevant
+  excerpts. The full document text is never sent.
+- The history database (`history.db`) is local. Delete it any time.
+- recallwell never phones home. No telemetry, no analytics.
+
+## Roadmap
+
+v0.2 priorities, in order:
+
+1. OCR for scanned PDFs (Tesseract or vision-LLM fallback).
+2. In-app PDF viewer with scroll-to-paragraph citation jumps.
+3. Importers for Kindle My Clippings, Pocket, Readwise.
+4. Sync via Syncthing-style file sync (move the SQLite file around).
+5. Browser extension for one-click web clipping.
+6. Offline mode via embedded llama.cpp.
+
+## Development
+
+```bash
+git clone https://github.com/yasserrmd/recallwell
+cd recallwell
+cargo run -- setup
+cargo run
+```
+
+Run the test suite:
+
+```bash
+cargo test
+```
+
+The project layout:
+
+```
+src/
+  config.rs         configuration loading and validation
+  cli.rs            clap subcommands
+  commands.rs       non-serve subcommand handlers (setup, config, libraries)
+  library.rs        named libraries backed by pagebridge SQLite adapters
+  ingest/           per-format parsers and the background queue
+  history.rs        ask history with SQLite + FTS5
+  export.rs         answer-to-Markdown rendering
+  source.rs         doc-id to original-file mapping
+  server/           axum routes, handlers, SSE helpers, token auth
+  ui/               embedded HTML/CSS/JS assets
+```
+
 ## License
 
-Dual MIT or Apache-2.0. Pick whichever you prefer.
+Dual licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your
+option.
+
+## Acknowledgments
+
+- [pagebridge](https://github.com/YASSERRMD/pagebridge) does all the heavy
+  lifting of building and navigating the document tree.
+- [Groq](https://groq.com) provides fast LLM inference for navigation and
+  synthesis.
+- [axum](https://github.com/tokio-rs/axum), [HTMX](https://htmx.org),
+  [Alpine](https://alpinejs.dev), and [Tailwind](https://tailwindcss.com)
+  make the rest of the stack pleasant.

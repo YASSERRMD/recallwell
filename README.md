@@ -262,25 +262,4 @@ cargo test
 
 ## License
 
-Dual licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at
-your option.
-
----
-
-<div align="center">
-
-<img src="docs/assets/brand/my-logo.png" alt="MY" width="40">
-
-<br>
-
-<sub>
-<b style="color:#1B2A4A">Mohamed Yasser</b>
-&nbsp;·&nbsp;
-<i>Solutions Architect</i>
-</sub>
-
-<br>
-
-<sub>navy <code>#1B2A4A</code> &nbsp;·&nbsp; gold <code>#C5A55A</code> &nbsp;·&nbsp; on white</sub>
-
-</div>
+Licensed under the [Apache License, Version 2.0](LICENSE-APACHE).

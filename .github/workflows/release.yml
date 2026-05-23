@@ -59,7 +59,7 @@ jobs:
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/recallwell dist/
-          cp README.md LICENSE-MIT LICENSE-APACHE dist/
+          cp README.md LICENSE-APACHE dist/
           cd dist
           tar -czf ../recallwell-${{ github.ref_name }}-${{ matrix.target }}.tar.gz *
 
@@ -69,7 +69,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path dist -Force
           Copy-Item target/${{ matrix.target }}/release/recallwell.exe dist/
-          Copy-Item README.md, LICENSE-MIT, LICENSE-APACHE dist/
+          Copy-Item README.md, LICENSE-APACHE dist/
           Compress-Archive -Path dist/* -DestinationPath recallwell-${{ github.ref_name }}-${{ matrix.target }}.zip
 
       - name: Upload artifact

@@ -24,7 +24,7 @@ async fn spawn_server() -> (SocketAddr, String, TempDir, tokio::task::JoinHandle
     let config = Arc::new(config);
 
     let libraries = Arc::new(LibraryRegistry::new(config.clone()).unwrap());
-    let ingest = IngestQueue::start(libraries.clone(), 1);
+    let ingest = IngestQueue::start(libraries.clone(), config.clone(), 1);
 
     let state = Arc::new(AppState {
         config,

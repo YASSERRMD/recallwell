@@ -9,4 +9,5 @@ pub mod config;
 pub mod ingest;
 pub mod library;
 pub mod server;
+pub mod source;
 pub mod ui;

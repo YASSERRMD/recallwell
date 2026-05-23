@@ -15,8 +15,10 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, warn};
 use ulid::Ulid;
 
+use crate::config::Config;
 use crate::ingest::parse_bytes;
 use crate::library::LibraryRegistry;
+use crate::source::{SourceEntry, SourceMap};
 
 const CHANNEL_BUFFER: usize = 64;
 const BROADCAST_BUFFER: usize = 32;
@@ -67,7 +69,11 @@ pub struct IngestQueue {
 
 impl IngestQueue {
     /// Spawn `max_concurrent` worker tasks and return the handle.
-    pub fn start(libraries: Arc<LibraryRegistry>, max_concurrent: usize) -> Arc<Self> {
+    pub fn start(
+        libraries: Arc<LibraryRegistry>,
+        config: Arc<Config>,
+        max_concurrent: usize,
+    ) -> Arc<Self> {
         let (tx, rx) = mpsc::channel::<Submission>(CHANNEL_BUFFER);
         let slots: Arc<RwLock<BTreeMap<String, Slot>>> = Arc::new(RwLock::new(BTreeMap::new()));
 
@@ -81,8 +87,9 @@ impl IngestQueue {
             let rx = rx.clone();
             let libraries = libraries.clone();
             let slots = slots.clone();
+            let config = config.clone();
             tokio::spawn(async move {
-                worker(rx, libraries, slots).await;
+                worker(rx, libraries, config, slots).await;
             });
         }
 
@@ -158,6 +165,7 @@ impl IngestQueue {
 async fn worker(
     rx: Arc<tokio::sync::Mutex<mpsc::Receiver<Submission>>>,
     libraries: Arc<LibraryRegistry>,
+    config: Arc<Config>,
     slots: Arc<RwLock<BTreeMap<String, Slot>>>,
 ) {
     loop {
@@ -170,7 +178,7 @@ async fn worker(
         };
         let id = submission.id.to_string();
         info!(job = %id, "ingest job picked up");
-        let outcome = process_job(&submission, &libraries, &slots).await;
+        let outcome = process_job(&submission, &libraries, &config, &slots).await;
         match outcome {
             Ok((doc_id, title)) => set_state(&slots, &id, IngestState::Done { doc_id, title }),
             Err(e) => {
@@ -190,6 +198,7 @@ async fn worker(
 async fn process_job(
     submission: &Submission,
     libraries: &Arc<LibraryRegistry>,
+    config: &Arc<Config>,
     slots: &Arc<RwLock<BTreeMap<String, Slot>>>,
 ) -> Result<(String, String)> {
     let id = submission.id.to_string();
@@ -229,7 +238,28 @@ async fn process_job(
     set_state(slots, &id, IngestState::Summarizing { progress: 1.0 });
 
     let doc_id = handle.doc_id.to_string();
+
+    // 4. Persist doc_id -> source file mapping so click-to-source works.
+    if let Ok(map) = SourceMap::open(config.clone(), &submission.library) {
+        let entry = SourceEntry {
+            file_path: submission.file_path.clone(),
+            original_filename: submission.original_filename.clone(),
+            ingested_at: now_secs(),
+        };
+        if let Err(e) = map.record(&doc_id, entry) {
+            tracing::warn!(job = %submission.id, "source map persist failed: {e}");
+        }
+    }
+
     Ok((doc_id, parsed.title))
+}
+
+fn now_secs() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| i64::try_from(d.as_secs()).unwrap_or(0))
+        .unwrap_or(0)
 }
 
 fn set_state(slots: &Arc<RwLock<BTreeMap<String, Slot>>>, id: &str, state: IngestState) {

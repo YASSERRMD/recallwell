@@ -56,7 +56,11 @@ pub async fn run(config: Arc<Config>) -> Result<()> {
         libraries.set_active("default").await.ok();
     }
 
-    let ingest = IngestQueue::start(libraries.clone(), config.ingest.max_concurrent.max(1));
+    let ingest = IngestQueue::start(
+        libraries.clone(),
+        config.clone(),
+        config.ingest.max_concurrent.max(1),
+    );
 
     let state = Arc::new(AppState {
         config: config.clone(),

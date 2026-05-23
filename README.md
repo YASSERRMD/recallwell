@@ -4,19 +4,39 @@
 
 <br>
 
-[![CI](https://github.com/yasserrmd/recallwell/actions/workflows/ci.yml/badge.svg)](https://github.com/yasserrmd/recallwell/actions/workflows/ci.yml)
-[![Release](https://github.com/yasserrmd/recallwell/actions/workflows/release.yml/badge.svg)](https://github.com/yasserrmd/recallwell/actions/workflows/release.yml)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
-[![Rust](https://img.shields.io/badge/rust-1.89+-orange.svg)](https://www.rust-lang.org)
-[![Platforms](https://img.shields.io/badge/platforms-linux%20%7C%20macos%20%7C%20windows-lightgrey.svg)](#download)
+[![CI](https://img.shields.io/github/actions/workflow/status/yasserrmd/recallwell/ci.yml?branch=main&style=flat-square&label=CI&labelColor=1B2A4A&color=C5A55A)](https://github.com/yasserrmd/recallwell/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/yasserrmd/recallwell?style=flat-square&label=release&labelColor=1B2A4A&color=C5A55A)](https://github.com/yasserrmd/recallwell/releases/latest)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-1B2A4A?style=flat-square&labelColor=1B2A4A&color=C5A55A)](#license)
+[![Rust](https://img.shields.io/badge/rust-1.89%2B-1B2A4A?style=flat-square&labelColor=1B2A4A&color=C5A55A&logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![Platforms](https://img.shields.io/badge/platforms-linux%20%7C%20macos%20%7C%20windows-1B2A4A?style=flat-square&labelColor=1B2A4A&color=C5A55A)](#download)
 
 **A personal knowledge base that runs as a single Rust binary on your laptop.**
 Drag in your PDFs, EPUBs, HTML, DOCX, and Markdown; ask questions; get answers
 with real citations that link back to the original source.
 
-[Download](#download) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [Configuration](docs/CONFIGURATION.md) · [Usage guide](docs/USAGE.md) · [Roadmap](#roadmap)
+[Download](#download) ·
+[Quickstart](#quickstart) ·
+[How it works](#how-it-works) ·
+[Configuration](docs/CONFIGURATION.md) ·
+[Usage guide](docs/USAGE.md) ·
+[Roadmap](#roadmap)
 
 </div>
+
+<table>
+<tr>
+<td width="80" align="center" valign="middle">
+<img src="docs/assets/brand/my-logo.png" alt="MY" width="64">
+</td>
+<td valign="middle">
+
+**Mohamed Yasser** &nbsp;·&nbsp; *Solutions Architect*
+<br>
+<sub>Designed and built end-to-end. This project applies the MY brand identity: navy `#1B2A4A`, gold `#C5A55A`, on white, with Georgia headings.</sub>
+
+</td>
+</tr>
+</table>
 
 ---
 
@@ -27,9 +47,9 @@ weak citations, or expect a subscription. recallwell takes the other path.
 
 |  | recallwell | typical cloud RAG |
 |---|---|---|
-| Where your documents live | your laptop | their servers |
-| Where indexing happens | your laptop | their servers |
-| Where history is stored | your laptop | their database |
+| Where your documents live | **your laptop** | their servers |
+| Where indexing happens | **your laptop** | their servers |
+| Where history is stored | **your laptop** | their database |
 | What goes to a third party | the question + top excerpts | the entire document |
 | Citations | exact section, click-through | usually fuzzy |
 | Setup | one binary | account, sub, agent install |
@@ -40,7 +60,7 @@ weak citations, or expect a subscription. recallwell takes the other path.
 - **Multi-format ingest.** PDF, EPUB, HTML, DOCX, Markdown, plain text. All
   parsed locally; nothing leaves your machine.
 - **Streaming answers.** Tokens arrive as the model produces them. Citations
-  appear inline as they're decided.
+  appear inline as they are decided.
 - **First-class citations.** Every answer is linked back to a precise section
   of the original document. Click a citation to open the source PDF at the
   right page.
@@ -89,14 +109,18 @@ Press Ctrl+C to stop.
 ```
 
 > The `?t=...` token is generated fresh on every server start. Anyone who has
-> the URL can use the server, so don't share it.
+> the URL can use the server, so do not share it.
 
 Get your Groq API key at <https://console.groq.com> (the free tier is plenty
 for personal use).
 
 ## How it works
 
+<div align="center">
+
 <img src="docs/assets/architecture.png" alt="recallwell architecture: ingest, ask, cite" width="100%">
+
+</div>
 
 Three lanes, all on your machine:
 
@@ -106,10 +130,10 @@ Three lanes, all on your machine:
    which builds a hierarchical summary tree and stores it in a local SQLite
    file. Progress streams back to the UI as Server-Sent Events.
 
-2. **Ask.** You type a question. Pagebridge does BM25 over the index, then
-   uses `llama-3.1-8b-instant` on Groq to navigate the summary tree, picks
-   the relevant leaves, and synthesises the final answer with
-   `llama-3.3-70b-versatile`. Tokens stream back to the browser as they're
+2. **Ask.** You type a question. pagebridge does BM25 over the index, uses
+   `llama-3.1-8b-instant` on Groq to navigate the summary tree, picks the
+   relevant leaves, and synthesises the final answer with
+   `llama-3.3-70b-versatile`. Tokens stream back to the browser as they are
    produced.
 
 3. **Cite.** Every answer is annotated with citations that map back to the
@@ -184,7 +208,7 @@ v0.2 priorities, in order:
 4. **Sync via Syncthing-style file sync** — just sync the SQLite file
    around; no special server.
 5. **Browser extension** — one-click web clipping into a chosen library.
-6. **Offline mode** — embed llama.cpp so you don't need Groq at all.
+6. **Offline mode** — embed llama.cpp so you do not need Groq at all.
 
 ## Development
 
@@ -244,5 +268,19 @@ your option.
 ---
 
 <div align="center">
-<sub>built with care by <a href="https://github.com/yasserrmd">Mohamed Yasser</a></sub>
+
+<img src="docs/assets/brand/my-logo.png" alt="MY" width="40">
+
+<br>
+
+<sub>
+<b style="color:#1B2A4A">Mohamed Yasser</b>
+&nbsp;·&nbsp;
+<i>Solutions Architect</i>
+</sub>
+
+<br>
+
+<sub>navy <code>#1B2A4A</code> &nbsp;·&nbsp; gold <code>#C5A55A</code> &nbsp;·&nbsp; on white</sub>
+
 </div>

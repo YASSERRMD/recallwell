@@ -1,0 +1,16 @@
+[package]
+name = "recallwell"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+license = "MIT OR Apache-2.0"
+authors = ["Mohamed Yasser <yasserrmd@users.noreply.github.com>"]
+repository = "https://github.com/yasserrmd/recallwell"
+description = "Your knowledge, indexed and citable. A personal knowledge base on pagebridge."
+readme = "README.md"
+keywords = ["knowledge-base", "rag", "search", "citations", "personal"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "recallwell"
+path = "src/main.rs"

@@ -1,0 +1,26 @@
+# Rust build artifacts
+/target
+Cargo.lock.bak
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and temp
+*.log
+*.tmp
+/tmp/
+
+# Local test data
+/test-data/
+/data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+!tests/samples/*.db

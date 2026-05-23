@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en" class="">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>recallwell</title>
+  <link rel="stylesheet" href="/assets/recallwell.css">
+  <script src="/assets/tailwind.min.js"></script>
+  <script src="/assets/htmx.min.js"></script>
+  <script defer src="/assets/alpine.min.js"></script>
+  <script>
+    // Apply theme based on stored preference or system.
+    (function() {
+      var pref = localStorage.getItem('rw-theme') || 'auto';
+      var dark = pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (dark) document.documentElement.classList.add('dark');
+    })();
+    // Inject the one-time token into every HTMX request.
+    document.addEventListener('htmx:configRequest', function(evt) {
+      evt.detail.headers['X-Recallwell-Token'] = '{TOKEN}';
+    });
+  </script>
+</head>
+<body class="min-h-screen">
+  <div x-data="{ token: '{TOKEN}', library: '{LIBRARY_NAME}', version: '{VERSION}', sidebar: 'history' }" class="flex flex-col min-h-screen">
+
+    <header class="rw-card mx-4 mt-4 px-4 py-3 flex items-center gap-4 shadow-sm">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-indigo-600 text-white grid place-items-center font-bold">r</div>
+        <h1 class="text-lg font-semibold tracking-tight">recallwell</h1>
+        <span class="text-xs text-zinc-500" x-text="'v' + version"></span>
+      </div>
+
+      <div class="flex-1"></div>
+
+      <div class="relative" x-data="{ open: false }">
+        <button
+          @click="open = !open"
+          class="px-3 py-1.5 text-sm rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition">
+          <span class="text-zinc-500 mr-1">library:</span><span x-text="library" class="font-medium"></span>
+        </button>
+        <div
+          x-show="open"
+          @click.outside="open = false"
+          x-transition
+          class="absolute right-0 mt-2 w-64 rw-card shadow-md p-2 z-20"
+          hx-get="/api/libraries"
+          hx-trigger="intersect once"
+          hx-swap="innerHTML">
+          <div class="text-xs text-zinc-500 px-2 py-1">loading libraries...</div>
+        </div>
+      </div>
+
+      <button
+        title="Theme"
+        @click="
+          var html = document.documentElement;
+          html.classList.toggle('dark');
+          localStorage.setItem('rw-theme', html.classList.contains('dark') ? 'dark' : 'light');
+        "
+        class="px-2 py-1.5 text-sm rounded-md border border-zinc-300 dark:border-zinc-700">
+        <span x-text="document.documentElement.classList.contains('dark') ? 'dark' : 'light'"></span>
+      </button>
+    </header>
+
+    <main class="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 px-4 py-4">
+
+      <section class="space-y-4">
+        <div class="rw-card p-4">
+          <form
+            hx-post="/api/ask"
+            hx-target="#answer"
+            hx-swap="innerHTML"
+            class="space-y-3">
+            <label class="text-xs uppercase tracking-wide text-zinc-500">Ask your library</label>
+            <textarea
+              name="question"
+              rows="3"
+              placeholder="What did I read about distributed consensus?"
+              class="w-full p-3 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+            <div class="flex items-center justify-between">
+              <div class="text-xs text-zinc-500">
+                Library: <span x-text="library" class="font-medium"></span>
+              </div>
+              <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-md font-medium hover:bg-indigo-500 transition">
+                Ask
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <article id="answer" class="rw-card p-4 prose dark:prose-invert max-w-none">
+          <p class="text-zinc-500 italic">Your answer will appear here.</p>
+        </article>
+      </section>
+
+      <aside class="space-y-4">
+        <div class="rw-card p-4">
+          <div class="text-xs uppercase tracking-wide text-zinc-500 mb-2">Ingest</div>
+          <div
+            id="ingest-drop"
+            class="border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-md p-6 text-center text-sm text-zinc-500">
+            Drag PDFs, EPUBs, HTML, DOCX, or Markdown here.
+          </div>
+          <div id="ingest-jobs" class="mt-3 space-y-2"></div>
+        </div>
+
+        <div class="rw-card p-4">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-xs uppercase tracking-wide text-zinc-500">History</div>
+            <button
+              hx-get="/api/history"
+              hx-target="#history-list"
+              hx-swap="innerHTML"
+              class="text-xs text-indigo-600 hover:underline">refresh</button>
+          </div>
+          <div id="history-list" hx-get="/api/history" hx-trigger="load" hx-swap="innerHTML">
+            <div class="text-xs text-zinc-500">loading...</div>
+          </div>
+        </div>
+      </aside>
+
+    </main>
+
+    <footer class="px-4 py-3 text-xs text-zinc-500 flex items-center gap-4">
+      <span>library: <span x-text="library" class="font-medium"></span></span>
+      <span class="ml-auto">recallwell <span x-text="'v' + version"></span></span>
+    </footer>
+
+  </div>
+</body>
+</html>

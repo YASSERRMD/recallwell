@@ -1,0 +1,62 @@
+/* recallwell overrides on top of Tailwind utilities. */
+
+:root {
+  --rw-accent: #6366f1;
+  --rw-accent-soft: #818cf8;
+  --rw-bg: #fafafa;
+  --rw-fg: #18181b;
+  --rw-surface: #ffffff;
+  --rw-border: #e4e4e7;
+  --rw-muted: #71717a;
+}
+
+html.dark {
+  --rw-bg: #09090b;
+  --rw-fg: #fafafa;
+  --rw-surface: #18181b;
+  --rw-border: #27272a;
+  --rw-muted: #a1a1aa;
+}
+
+html, body {
+  background: var(--rw-bg);
+  color: var(--rw-fg);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100%;
+}
+
+.rw-card {
+  background: var(--rw-surface);
+  border: 1px solid var(--rw-border);
+  border-radius: 0.75rem;
+}
+
+.rw-citation {
+  border-left: 3px solid var(--rw-accent);
+  padding-left: 0.75rem;
+  color: var(--rw-muted);
+}
+
+.htmx-indicator {
+  opacity: 0;
+  transition: opacity 200ms ease-in;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  opacity: 1;
+}
+
+.rw-spinner {
+  border: 2px solid var(--rw-border);
+  border-top-color: var(--rw-accent);
+  border-radius: 50%;
+  width: 1rem;
+  height: 1rem;
+  animation: rw-spin 0.6s linear infinite;
+  display: inline-block;
+}
+
+@keyframes rw-spin {
+  to { transform: rotate(360deg); }
+}

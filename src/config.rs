@@ -313,9 +313,8 @@ impl Config {
     pub fn save(&self) -> Result<PathBuf> {
         let path = Self::config_path()?;
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).with_context(|| {
-                format!("creating config directory {}", parent.display())
-            })?;
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating config directory {}", parent.display()))?;
         }
         let serialized = toml::to_string_pretty(self).context("serializing config")?;
         std::fs::write(&path, serialized)
@@ -343,4 +342,149 @@ fn ensure_writable_dir(path: &Path) -> Result<()> {
         .with_context(|| format!("writing to {} (is it writable?)", path.display()))?;
     std::fs::remove_file(&probe).ok();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn defaults_match_reference_card() {
+        let c = Config::default();
+        assert_eq!(c.groq.synthesis_model, "llama-3.3-70b-versatile");
+        assert_eq!(c.groq.navigation_model, "llama-3.1-8b-instant");
+        assert_eq!(c.groq.base_url, "https://api.groq.com/openai/v1");
+        assert_eq!(c.server.port, 7676);
+        assert_eq!(c.server.host, "127.0.0.1");
+        assert!(c.server.auto_open);
+        assert_eq!(c.ui.theme, "auto");
+        assert_eq!(c.ingest.max_concurrent, 2);
+        assert!(!c.ingest.ocr_fallback);
+        assert_eq!(c.ask.max_navigation_steps, 4);
+        assert_eq!(c.ask.beam_width, 3);
+        assert_eq!(c.ask.bm25_candidate_limit, 30);
+        assert_eq!(c.ask.max_leaves, 8);
+        assert!((c.ask.synthesis_temperature - 0.2).abs() < f32::EPSILON);
+        assert!(c.ask.navigation_temperature.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn loads_complete_config_from_toml() {
+        let toml_str = r#"
+[groq]
+api_key = "gsk_test"
+synthesis_model = "custom-syn"
+navigation_model = "custom-nav"
+base_url = "https://example.test/v1"
+
+[server]
+host = "0.0.0.0"
+port = 9000
+auto_open = false
+
+[ui]
+theme = "dark"
+
+[ingest]
+max_concurrent = 4
+ocr_fallback = true
+
+[ask]
+max_navigation_steps = 6
+beam_width = 5
+"#;
+        let c: Config = toml::from_str(toml_str).expect("parse");
+        assert_eq!(c.groq.api_key.as_deref(), Some("gsk_test"));
+        assert_eq!(c.groq.synthesis_model, "custom-syn");
+        assert_eq!(c.server.port, 9000);
+        assert!(!c.server.auto_open);
+        assert_eq!(c.ui.theme, "dark");
+        assert_eq!(c.ingest.max_concurrent, 4);
+        assert!(c.ingest.ocr_fallback);
+        assert_eq!(c.ask.max_navigation_steps, 6);
+        assert_eq!(c.ask.beam_width, 5);
+        // Defaults still apply for absent keys.
+        assert_eq!(c.ask.max_leaves, 8);
+    }
+
+    #[test]
+    fn validate_rejects_missing_api_key() {
+        let c = Config::default();
+        let err = c.validate().unwrap_err();
+        assert!(err.to_string().contains("Groq API key not set"));
+    }
+
+    #[test]
+    fn validate_rejects_low_port() {
+        let dir = tempdir().unwrap();
+        let mut c = Config::default();
+        c.groq.api_key = Some("gsk_ok".into());
+        c.data.dir = Some(dir.path().to_path_buf());
+        c.server.port = 80;
+        let err = c.validate().unwrap_err();
+        assert!(err.to_string().contains("privileged"));
+    }
+
+    #[test]
+    fn validate_creates_data_subdirs() {
+        let dir = tempdir().unwrap();
+        let mut c = Config::default();
+        c.groq.api_key = Some("gsk_ok".into());
+        c.data.dir = Some(dir.path().to_path_buf());
+        c.validate().expect("validate ok");
+        assert!(c.library_dir().unwrap().exists());
+        assert!(c.ingested_files_dir().unwrap().exists());
+    }
+
+    #[test]
+    fn load_picks_up_env_api_key() {
+        // SAFETY: tests in this module are unit-level and not actually run in parallel
+        // with conflicting env state; we restore the var below.
+        let prev = std::env::var("RECALLWELL_GROQ_API_KEY").ok();
+        std::env::set_var("RECALLWELL_GROQ_API_KEY", "gsk_from_env");
+
+        let tmp = tempdir().unwrap();
+        let cfg_path = tmp.path().join("nope.toml");
+        let overrides = CliOverrides {
+            config_path: Some(cfg_path),
+            ..Default::default()
+        };
+        let c = Config::load(&overrides).unwrap();
+        assert_eq!(c.groq.api_key.as_deref(), Some("gsk_from_env"));
+
+        match prev {
+            Some(v) => std::env::set_var("RECALLWELL_GROQ_API_KEY", v),
+            None => std::env::remove_var("RECALLWELL_GROQ_API_KEY"),
+        }
+    }
+
+    #[test]
+    fn cli_overrides_win_over_env() {
+        let prev_port = std::env::var("RECALLWELL_PORT").ok();
+        std::env::set_var("RECALLWELL_PORT", "8001");
+
+        let tmp = tempdir().unwrap();
+        let cfg_path = tmp.path().join("nope.toml");
+        let overrides = CliOverrides {
+            config_path: Some(cfg_path),
+            port: Some(9999),
+            ..Default::default()
+        };
+        let c = Config::load(&overrides).unwrap();
+        assert_eq!(c.server.port, 9999);
+
+        match prev_port {
+            Some(v) => std::env::set_var("RECALLWELL_PORT", v),
+            None => std::env::remove_var("RECALLWELL_PORT"),
+        }
+    }
+
+    #[test]
+    fn redacted_hides_api_key() {
+        let mut c = Config::default();
+        c.groq.api_key = Some("gsk_real".into());
+        let r = c.redacted();
+        assert_eq!(r.groq.api_key.as_deref(), Some("***redacted***"));
+    }
 }

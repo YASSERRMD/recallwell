@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod error;
+pub mod handlers;
 pub mod routes;
 
 use std::net::SocketAddr;
@@ -13,12 +14,14 @@ use tokio::net::TcpListener;
 use tracing::info;
 
 use crate::config::Config;
+use crate::library::LibraryRegistry;
 
 /// Shared application state.
 pub struct AppState {
     pub config: Arc<Config>,
     pub token: String,
     pub started_at: std::time::Instant,
+    pub libraries: Arc<LibraryRegistry>,
 }
 
 /// Result of binding the server: addr to listen on plus the token.
@@ -43,10 +46,18 @@ pub async fn run(config: Arc<Config>) -> Result<()> {
 
     info!("recallwell listening on {addr}");
 
+    let libraries = Arc::new(LibraryRegistry::new(config.clone())?);
+    // Make sure the default library exists on first run.
+    if libraries.list().await?.is_empty() {
+        libraries.create("default").await.ok();
+        libraries.set_active("default").await.ok();
+    }
+
     let state = Arc::new(AppState {
         config: config.clone(),
         token: token.clone(),
         started_at: std::time::Instant::now(),
+        libraries,
     });
 
     let app = routes::router(state.clone()).layer(middleware::from_fn_with_state(

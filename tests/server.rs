@@ -3,19 +3,32 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use recallwell::config::Config;
+use recallwell::library::LibraryRegistry;
 use recallwell::server::{self, auth, routes, AppState};
+use tempfile::TempDir;
 use tokio::net::TcpListener;
 
-/// Spawn the server on a random port and return (addr, token, shutdown).
-async fn spawn_server() -> (SocketAddr, String, tokio::task::JoinHandle<()>) {
+/// Spawn the server on a random port and return (addr, token, _temp_dir, _join_handle).
+/// The temp dir is kept alive by the caller (`_dir` binding) to back the data dir.
+async fn spawn_server() -> (SocketAddr, String, TempDir, tokio::task::JoinHandle<()>) {
+    let dir = tempfile::tempdir().unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let token = auth::new_token();
 
+    let mut config = Config::default();
+    config.data.dir = Some(dir.path().to_path_buf());
+    // Pretend a Groq key is configured so library open works (we never call it).
+    config.groq.api_key = Some("gsk_test".into());
+    let config = Arc::new(config);
+
+    let libraries = Arc::new(LibraryRegistry::new(config.clone()).unwrap());
+
     let state = Arc::new(AppState {
-        config: Arc::new(Config::default()),
+        config,
         token: token.clone(),
         started_at: std::time::Instant::now(),
+        libraries,
     });
 
     let app = routes::router(state.clone()).layer(axum::middleware::from_fn_with_state(
@@ -29,12 +42,12 @@ async fn spawn_server() -> (SocketAddr, String, tokio::task::JoinHandle<()>) {
 
     // Give the server a moment to be ready.
     tokio::time::sleep(Duration::from_millis(50)).await;
-    (addr, token, handle)
+    (addr, token, dir, handle)
 }
 
 #[tokio::test]
 async fn health_with_valid_token_returns_ok() {
-    let (addr, token, _h) = spawn_server().await;
+    let (addr, token, _dir, _h) = spawn_server().await;
     let url = format!("http://{addr}/api/health?t={token}");
     let resp = reqwest::get(&url).await.unwrap();
     assert_eq!(resp.status(), reqwest::StatusCode::OK);
@@ -45,7 +58,7 @@ async fn health_with_valid_token_returns_ok() {
 
 #[tokio::test]
 async fn health_without_token_is_unauthorized() {
-    let (addr, _token, _h) = spawn_server().await;
+    let (addr, _token, _dir, _h) = spawn_server().await;
     let url = format!("http://{addr}/api/health");
     let resp = reqwest::get(&url).await.unwrap();
     assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
@@ -53,7 +66,7 @@ async fn health_without_token_is_unauthorized() {
 
 #[tokio::test]
 async fn health_with_bad_token_is_unauthorized() {
-    let (addr, _token, _h) = spawn_server().await;
+    let (addr, _token, _dir, _h) = spawn_server().await;
     let url = format!("http://{addr}/api/health?t=not-the-real-token");
     let resp = reqwest::get(&url).await.unwrap();
     assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
@@ -61,7 +74,7 @@ async fn health_with_bad_token_is_unauthorized() {
 
 #[tokio::test]
 async fn token_via_header_is_accepted() {
-    let (addr, token, _h) = spawn_server().await;
+    let (addr, token, _dir, _h) = spawn_server().await;
     let url = format!("http://{addr}/api/health");
     let client = reqwest::Client::new();
     let resp = client
@@ -75,7 +88,7 @@ async fn token_via_header_is_accepted() {
 
 #[tokio::test]
 async fn config_route_redacts_api_key() {
-    let (addr, token, _h) = spawn_server().await;
+    let (addr, token, _dir, _h) = spawn_server().await;
     let url = format!("http://{addr}/api/config?t={token}");
     let resp = reqwest::get(&url).await.unwrap();
     assert_eq!(resp.status(), reqwest::StatusCode::OK);
@@ -86,7 +99,7 @@ async fn config_route_redacts_api_key() {
 
 #[tokio::test]
 async fn assets_served_without_auth() {
-    let (addr, _token, _h) = spawn_server().await;
+    let (addr, _token, _dir, _h) = spawn_server().await;
     let url = format!("http://{addr}/assets/recallwell.css");
     let resp = reqwest::get(&url).await.unwrap();
     assert_eq!(resp.status(), reqwest::StatusCode::OK);
@@ -102,7 +115,7 @@ async fn assets_served_without_auth() {
 
 #[tokio::test]
 async fn unknown_asset_returns_404() {
-    let (addr, _token, _h) = spawn_server().await;
+    let (addr, _token, _dir, _h) = spawn_server().await;
     let url = format!("http://{addr}/assets/evil.exe");
     let resp = reqwest::get(&url).await.unwrap();
     assert_eq!(resp.status(), reqwest::StatusCode::NOT_FOUND);
@@ -110,7 +123,7 @@ async fn unknown_asset_returns_404() {
 
 #[tokio::test]
 async fn index_renders_with_token_substituted() {
-    let (addr, token, _h) = spawn_server().await;
+    let (addr, token, _dir, _h) = spawn_server().await;
     let url = format!("http://{addr}/?t={token}");
     let resp = reqwest::get(&url).await.unwrap();
     assert_eq!(resp.status(), reqwest::StatusCode::OK);

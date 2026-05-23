@@ -144,8 +144,7 @@ impl LibraryRegistry {
         self.libraries.remove(name);
         let path = self.path_for(name)?;
         if path.exists() {
-            std::fs::remove_file(&path)
-                .with_context(|| format!("removing {}", path.display()))?;
+            std::fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
         }
         // If the active library was deleted, clear it.
         let mut state = self.state.lock().await;

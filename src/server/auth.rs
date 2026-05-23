@@ -36,10 +36,7 @@ pub async fn require_token(
         return next.run(request).await;
     }
 
-    let supplied_from_query = request
-        .uri()
-        .query()
-        .and_then(|q| extract_query_token(q));
+    let supplied_from_query = request.uri().query().and_then(|q| extract_query_token(q));
     let supplied_from_header = request
         .headers()
         .get(TOKEN_HEADER)

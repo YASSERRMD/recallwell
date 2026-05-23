@@ -49,7 +49,11 @@ fn main() -> Result<()> {
 }
 
 fn init_tracing(verbose: bool) {
-    let default = if verbose { "debug,recallwell=trace" } else { "info" };
+    let default = if verbose {
+        "debug,recallwell=trace"
+    } else {
+        "info"
+    };
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default));
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)

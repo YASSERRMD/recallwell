@@ -6,6 +6,7 @@
 pub mod cli;
 pub mod commands;
 pub mod config;
+pub mod ingest;
 pub mod library;
 pub mod server;
 pub mod ui;

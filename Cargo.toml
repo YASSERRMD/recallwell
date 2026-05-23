@@ -29,7 +29,7 @@ axum = { version = "0.7", features = ["macros", "ws", "multipart"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip", "fs"] }
 hyper = "1.4"
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["sync"] }
 async-stream = "0.3"
 
 # CLI

@@ -4,6 +4,7 @@ pub mod auth;
 pub mod error;
 pub mod handlers;
 pub mod routes;
+pub mod sse;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -14,6 +15,7 @@ use tokio::net::TcpListener;
 use tracing::info;
 
 use crate::config::Config;
+use crate::ingest::queue::IngestQueue;
 use crate::library::LibraryRegistry;
 
 /// Shared application state.
@@ -22,6 +24,7 @@ pub struct AppState {
     pub token: String,
     pub started_at: std::time::Instant,
     pub libraries: Arc<LibraryRegistry>,
+    pub ingest: Arc<IngestQueue>,
 }
 
 /// Result of binding the server: addr to listen on plus the token.
@@ -53,11 +56,14 @@ pub async fn run(config: Arc<Config>) -> Result<()> {
         libraries.set_active("default").await.ok();
     }
 
+    let ingest = IngestQueue::start(libraries.clone(), config.ingest.max_concurrent.max(1));
+
     let state = Arc::new(AppState {
         config: config.clone(),
         token: token.clone(),
         started_at: std::time::Instant::now(),
         libraries,
+        ingest,
     });
 
     let app = routes::router(state.clone()).layer(middleware::from_fn_with_state(

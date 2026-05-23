@@ -105,6 +105,26 @@
       };
     }
 
+    function statsFooter() {
+      return {
+        stats: null,
+        library: '{LIBRARY_NAME}',
+        version: '{VERSION}',
+        async load() {
+          try {
+            var resp = await fetch('/api/stats?t=' + encodeURIComponent(window.RW_TOKEN));
+            if (resp.ok) this.stats = await resp.json();
+          } catch (e) {}
+        },
+        formatBytes(n) {
+          var units = ['B','KB','MB','GB','TB'];
+          var i = 0;
+          while (n >= 1024 && i + 1 < units.length) { n = n / 1024; i++; }
+          return n.toFixed(1) + ' ' + units[i];
+        }
+      };
+    }
+
     function ingestPanel() {
       return {
         dragover: false,
@@ -167,7 +187,31 @@
   </script>
 </head>
 <body class="min-h-screen">
-  <div x-data="{ token: '{TOKEN}', library: '{LIBRARY_NAME}', version: '{VERSION}', sidebar: 'history' }" class="flex flex-col min-h-screen">
+  <div x-data="{
+        token: '{TOKEN}',
+        library: '{LIBRARY_NAME}',
+        version: '{VERSION}',
+        sidebar: 'history',
+        showShortcuts: false,
+        init() {
+          var self = this;
+          window.addEventListener('keydown', function(e) {
+            var mod = e.ctrlKey || e.metaKey;
+            if (mod && e.key.toLowerCase() === 'k') {
+              e.preventDefault();
+              var ta = document.querySelector('textarea[x-model=\'question\']');
+              if (ta) ta.focus();
+            } else if (mod && e.key.toLowerCase() === 'l') {
+              e.preventDefault();
+              var btn = document.querySelector('header button');
+              if (btn) btn.click();
+            } else if (mod && e.key === '/') {
+              e.preventDefault();
+              self.showShortcuts = !self.showShortcuts;
+            }
+          });
+        }
+      }" class="flex flex-col min-h-screen">
 
     <header class="rw-card mx-4 mt-4 px-4 py-3 flex items-center gap-4 shadow-sm">
       <div class="flex items-center gap-2">
@@ -206,6 +250,11 @@
         class="px-2 py-1.5 text-sm rounded-md border border-zinc-300 dark:border-zinc-700">
         <span x-text="document.documentElement.classList.contains('dark') ? 'dark' : 'light'"></span>
       </button>
+
+      <button
+        title="Keyboard shortcuts (Ctrl+/)"
+        @click="showShortcuts = true"
+        class="px-2 py-1.5 text-sm rounded-md border border-zinc-300 dark:border-zinc-700">?</button>
     </header>
 
     <main class="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 px-4 py-4">
@@ -312,10 +361,37 @@
 
     </main>
 
-    <footer class="px-4 py-3 text-xs text-zinc-500 flex items-center gap-4">
+    <footer class="px-4 py-3 text-xs text-zinc-500 flex items-center gap-4 flex-wrap"
+            x-data="statsFooter()" x-init="load(); setInterval(load, 10000)">
       <span>library: <span x-text="library" class="font-medium"></span></span>
+      <span x-show="stats">|</span>
+      <span x-show="stats" x-text="'docs: ' + (stats?.library_count || 0)"></span>
+      <span x-show="stats">|</span>
+      <span x-show="stats" x-text="'size: ' + formatBytes(stats?.total_size_bytes || 0)"></span>
+      <span x-show="stats">|</span>
+      <span x-show="stats" x-text="'asks today: ' + (stats?.asks_today || 0)"></span>
+      <span x-show="stats">|</span>
+      <span x-show="stats" x-text="'model: ' + (stats?.synthesis_model || '')"></span>
       <span class="ml-auto">recallwell <span x-text="'v' + version"></span></span>
     </footer>
+
+    <!-- Shortcut help overlay -->
+    <div x-show="showShortcuts" x-transition x-cloak
+         @keydown.escape.window="showShortcuts = false"
+         class="fixed inset-0 bg-black/40 grid place-items-center z-50"
+         @click="showShortcuts = false">
+      <div class="rw-card p-6 max-w-md w-full mx-4" @click.stop>
+        <h2 class="text-lg font-semibold mb-3">Keyboard shortcuts</h2>
+        <table class="text-sm w-full">
+          <tr><td class="py-1"><kbd class="px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800">Ctrl K</kbd></td><td>focus ask box</td></tr>
+          <tr><td class="py-1"><kbd class="px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800">Ctrl L</kbd></td><td>focus library switcher</td></tr>
+          <tr><td class="py-1"><kbd class="px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800">Ctrl /</kbd></td><td>this help</td></tr>
+          <tr><td class="py-1"><kbd class="px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800">Esc</kbd></td><td>close overlays</td></tr>
+        </table>
+        <button class="mt-4 px-3 py-1.5 text-sm bg-indigo-600 text-white rounded"
+                @click="showShortcuts = false">Got it</button>
+      </div>
+    </div>
 
   </div>
 </body>

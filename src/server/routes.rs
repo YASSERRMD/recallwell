@@ -20,6 +20,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/assets/:name", get(asset))
         .route("/api/health", get(health))
         .route("/api/config", get(api_config))
+        .route("/api/stats", get(api_stats))
         .route(
             "/api/libraries",
             get(handlers::libraries::list).post(handlers::libraries::create),
@@ -88,4 +89,32 @@ async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 async fn api_config(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let redacted = state.config.redacted();
     Json(redacted)
+}
+
+#[allow(clippy::cast_possible_wrap)]
+async fn api_stats(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let uptime_secs = state.started_at.elapsed().as_secs();
+    let libraries = state.libraries.list().await.unwrap_or_default();
+    let active = state.libraries.active().await;
+    let total_size: u64 = libraries.iter().map(|l| l.file_size_bytes).sum();
+    let recent = state.history.list(None, 20, 0).await.unwrap_or_default();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| i64::try_from(d.as_secs()).unwrap_or(0))
+        .unwrap_or(0);
+    let today_start = now - (now % 86_400);
+    let asks_today = recent
+        .iter()
+        .filter(|r| r.created_at >= today_start)
+        .count();
+    Json(json!({
+        "uptime_secs": uptime_secs,
+        "library_count": libraries.len(),
+        "active_library": active,
+        "total_size_bytes": total_size,
+        "asks_today": asks_today,
+        "synthesis_model": state.config.groq.synthesis_model,
+        "navigation_model": state.config.groq.navigation_model,
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
 }

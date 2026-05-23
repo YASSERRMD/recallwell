@@ -21,6 +21,90 @@
     });
     window.RW_TOKEN = '{TOKEN}';
 
+    function askPanel() {
+      return {
+        question: '',
+        busy: false,
+        answer: '',
+        renderedAnswer: '',
+        citations: [],
+        trace: '',
+        library: '{LIBRARY_NAME}',
+        async ask() {
+          if (!this.question.trim() || this.busy) return;
+          this.busy = true;
+          this.answer = '';
+          this.renderedAnswer = '';
+          this.citations = [];
+          this.trace = '';
+
+          var resp = await fetch('/api/ask?t=' + encodeURIComponent(window.RW_TOKEN), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Recallwell-Token': window.RW_TOKEN },
+            body: JSON.stringify({ question: this.question })
+          });
+          if (!resp.ok || !resp.body) {
+            this.busy = false;
+            this.answer = '(error: ' + resp.status + ' ' + resp.statusText + ')';
+            this.renderedAnswer = this.answer;
+            return;
+          }
+          var reader = resp.body.getReader();
+          var dec = new TextDecoder();
+          var buf = '';
+          var self = this;
+          while (true) {
+            var chunk = await reader.read();
+            if (chunk.done) break;
+            buf += dec.decode(chunk.value, { stream: true });
+            // SSE events are separated by \n\n.
+            var parts = buf.split('\n\n');
+            buf = parts.pop();
+            parts.forEach(function(raw) { self.handleEvent(raw); });
+          }
+          this.busy = false;
+        },
+        handleEvent(raw) {
+          var lines = raw.split('\n');
+          var name = '';
+          var data = '';
+          lines.forEach(function(l) {
+            if (l.startsWith('event:')) name = l.slice(6).trim();
+            if (l.startsWith('data:')) data += l.slice(5).trim();
+          });
+          if (!name) return;
+          try { data = JSON.parse(data); } catch (e) { return; }
+          if (name === 'token') {
+            this.answer += data.text;
+            this.renderedAnswer = this.renderAnswerText(this.answer);
+          } else if (name === 'citation') {
+            this.citations.push(data);
+          } else if (name === 'done') {
+            this.trace = JSON.stringify(data, null, 2);
+          } else if (name === 'error') {
+            this.answer += '\n\n(stream error: ' + data.error + ')';
+            this.renderedAnswer = this.renderAnswerText(this.answer);
+          }
+        },
+        renderAnswerText(text) {
+          var n = this.citations.length;
+          // Append numeric footnote markers if the model used [^1] style.
+          return text
+            .replace(/\[\^(\d+)\]/g, '<sup class="text-indigo-600">[$1]</sup>')
+            .replace(/\n/g, '<br>');
+        },
+        openSource(citation) {
+          var lib = encodeURIComponent('{LIBRARY_NAME}');
+          var doc = encodeURIComponent(citation.doc_id);
+          var url = '/api/source/' + lib + '/' + doc + '?t=' + encodeURIComponent(window.RW_TOKEN);
+          if (citation.page_range && Array.isArray(citation.page_range) && citation.page_range[0]) {
+            url += '#page=' + citation.page_range[0];
+          }
+          window.open(url, '_blank');
+        }
+      };
+    }
+
     function ingestPanel() {
       return {
         dragover: false,
@@ -126,32 +210,55 @@
 
     <main class="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 px-4 py-4">
 
-      <section class="space-y-4">
+      <section class="space-y-4" x-data="askPanel()">
         <div class="rw-card p-4">
-          <form
-            hx-post="/api/ask"
-            hx-target="#answer"
-            hx-swap="innerHTML"
-            class="space-y-3">
+          <form @submit.prevent="ask()" class="space-y-3">
             <label class="text-xs uppercase tracking-wide text-zinc-500">Ask your library</label>
             <textarea
-              name="question"
+              x-model="question"
               rows="3"
               placeholder="What did I read about distributed consensus?"
               class="w-full p-3 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
             <div class="flex items-center justify-between">
               <div class="text-xs text-zinc-500">
                 Library: <span x-text="library" class="font-medium"></span>
+                <span x-show="busy" class="ml-2"><span class="rw-spinner align-middle"></span> thinking...</span>
               </div>
-              <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-md font-medium hover:bg-indigo-500 transition">
+              <button type="submit" :disabled="busy"
+                class="px-4 py-2 bg-indigo-600 text-white rounded-md font-medium hover:bg-indigo-500 transition disabled:opacity-50">
                 Ask
               </button>
             </div>
           </form>
         </div>
 
-        <article id="answer" class="rw-card p-4 prose dark:prose-invert max-w-none">
-          <p class="text-zinc-500 italic">Your answer will appear here.</p>
+        <article id="answer" class="rw-card p-4 max-w-none">
+          <template x-if="!answer && !busy">
+            <p class="text-zinc-500 italic">Your answer will appear here.</p>
+          </template>
+          <template x-if="answer || busy">
+            <div>
+              <div class="whitespace-pre-wrap" x-html="renderedAnswer"></div>
+              <template x-if="citations.length">
+                <div class="mt-4 space-y-2">
+                  <div class="text-xs uppercase tracking-wide text-zinc-500">Citations</div>
+                  <template x-for="(c, i) in citations" :key="i">
+                    <div class="rw-citation text-sm">
+                      <div class="font-medium" x-text="`[${i + 1}] ${c.section_title || c.doc_title}`"></div>
+                      <div class="text-zinc-500 text-xs" x-text="c.doc_title"></div>
+                      <div class="mt-1" x-text="c.excerpt"></div>
+                      <button class="mt-1 text-xs text-indigo-600 hover:underline"
+                        @click="openSource(c)">Open source</button>
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <details x-show="trace" class="mt-4 text-xs text-zinc-500">
+                <summary class="cursor-pointer">trace</summary>
+                <pre class="mt-2 p-2 bg-zinc-100 dark:bg-zinc-800 rounded overflow-x-auto" x-text="trace"></pre>
+              </details>
+            </div>
+          </template>
         </article>
       </section>
 

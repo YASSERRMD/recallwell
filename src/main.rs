@@ -1,15 +1,21 @@
 mod cli;
 mod commands;
 mod config;
+mod server;
+
+use std::sync::Arc;
 
 use anyhow::Result;
 use clap::Parser;
+use tracing_subscriber::EnvFilter;
 
 use crate::cli::{Cli, Command};
-use crate::config::CliOverrides;
+use crate::config::{CliOverrides, Config};
 
 fn main() -> Result<()> {
     let args = Cli::parse();
+    init_tracing(args.verbose);
+
     let overrides = CliOverrides {
         data_dir: args.data_dir.clone(),
         config_path: args.config.clone(),
@@ -28,10 +34,12 @@ fn main() -> Result<()> {
                 auto_open: Some(auto_open),
                 ..overrides
             };
-            println!(
-                "recallwell v{} (serve not yet wired; overrides = {overrides:?})",
-                env!("CARGO_PKG_VERSION")
-            );
+            let config = Config::load(&overrides)?;
+            config.validate()?;
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?;
+            rt.block_on(server::run(Arc::new(config)))?;
         }
         Command::Setup => commands::run_setup(&overrides)?,
         Command::Config { edit } => commands::run_config(&overrides, edit)?,
@@ -41,4 +49,13 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn init_tracing(verbose: bool) {
+    let default = if verbose { "debug,recallwell=trace" } else { "info" };
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default));
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .try_init();
 }

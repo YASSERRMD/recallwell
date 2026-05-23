@@ -84,6 +84,42 @@ async fn config_route_redacts_api_key() {
     assert!(body["groq"]["api_key"].is_null() || body["groq"]["api_key"] == "***redacted***");
 }
 
+#[tokio::test]
+async fn assets_served_without_auth() {
+    let (addr, _token, _h) = spawn_server().await;
+    let url = format!("http://{addr}/assets/recallwell.css");
+    let resp = reqwest::get(&url).await.unwrap();
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    assert!(resp
+        .headers()
+        .get("content-type")
+        .map(|v| v.to_str().unwrap_or(""))
+        .unwrap_or("")
+        .starts_with("text/css"));
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("rw-card"));
+}
+
+#[tokio::test]
+async fn unknown_asset_returns_404() {
+    let (addr, _token, _h) = spawn_server().await;
+    let url = format!("http://{addr}/assets/evil.exe");
+    let resp = reqwest::get(&url).await.unwrap();
+    assert_eq!(resp.status(), reqwest::StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn index_renders_with_token_substituted() {
+    let (addr, token, _h) = spawn_server().await;
+    let url = format!("http://{addr}/?t={token}");
+    let resp = reqwest::get(&url).await.unwrap();
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let body = resp.text().await.unwrap();
+    assert!(body.contains(&token));
+    assert!(!body.contains("{TOKEN}"));
+    assert!(body.contains("recallwell"));
+}
+
 #[allow(dead_code)]
 fn _ensure_server_module_used() {
     // Force linkage of public modules for the integration crate.

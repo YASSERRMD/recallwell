@@ -142,6 +142,46 @@ pub async fn delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ExportQuery {
+    #[serde(default)]
+    pub format: Option<String>,
+}
+
+pub async fn export(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Query(q): Query<ExportQuery>,
+) -> Result<axum::response::Response, ApiError> {
+    let format = q.format.as_deref().unwrap_or("markdown");
+    if format != "markdown" && format != "md" {
+        return Err(ApiError::BadRequest(format!(
+            "unsupported format: {format} (v0.1 supports markdown only)"
+        )));
+    }
+    let ask = state
+        .history
+        .get(&id)
+        .await
+        .map_err(ApiError::Internal)?
+        .ok_or_else(|| ApiError::NotFound(format!("history {id}")))?;
+    let body = crate::export::answer_to_markdown(&ask);
+    let filename = crate::export::filename_for(&ask);
+    let disposition = format!("attachment; filename=\"{filename}\"");
+    Ok((
+        StatusCode::OK,
+        [
+            (
+                header::CONTENT_TYPE,
+                "text/markdown; charset=utf-8".to_string(),
+            ),
+            (header::CONTENT_DISPOSITION, disposition),
+        ],
+        body,
+    )
+        .into_response())
+}
+
 pub async fn clear(
     State(state): State<Arc<AppState>>,
     Query(q): Query<ClearQuery>,

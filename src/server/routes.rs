@@ -50,6 +50,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/api/history/:id",
             get(handlers::history::get).delete(handlers::history::delete),
         )
+        .route("/api/history/:id/export", get(handlers::history::export))
         .with_state(state)
 }
 

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use recallwell::config::Config;
+use recallwell::history::History;
 use recallwell::ingest::queue::IngestQueue;
 use recallwell::library::LibraryRegistry;
 use recallwell::server::{self, auth, routes, AppState};
@@ -25,6 +26,11 @@ async fn spawn_server() -> (SocketAddr, String, TempDir, tokio::task::JoinHandle
 
     let libraries = Arc::new(LibraryRegistry::new(config.clone()).unwrap());
     let ingest = IngestQueue::start(libraries.clone(), config.clone(), 1);
+    let history = Arc::new(
+        History::open(&config.history_db_path().unwrap())
+            .await
+            .unwrap(),
+    );
 
     let state = Arc::new(AppState {
         config,
@@ -32,6 +38,7 @@ async fn spawn_server() -> (SocketAddr, String, TempDir, tokio::task::JoinHandle
         started_at: std::time::Instant::now(),
         libraries,
         ingest,
+        history,
     });
 
     let app = routes::router(state.clone()).layer(axum::middleware::from_fn_with_state(

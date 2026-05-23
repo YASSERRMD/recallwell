@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross (Linux aarch64)
+        if: matrix.cross
+        run: cargo install --locked cross --git https://github.com/cross-rs/cross
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Build (native)
+        if: '!matrix.cross'
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Stage artifact (unix)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/recallwell dist/
+          cp README.md LICENSE-MIT LICENSE-APACHE dist/
+          cd dist
+          tar -czf ../recallwell-${{ github.ref_name }}-${{ matrix.target }}.tar.gz *
+
+      - name: Stage artifact (windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force
+          Copy-Item target/${{ matrix.target }}/release/recallwell.exe dist/
+          Copy-Item README.md, LICENSE-MIT, LICENSE-APACHE dist/
+          Compress-Archive -Path dist/* -DestinationPath recallwell-${{ github.ref_name }}-${{ matrix.target }}.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: recallwell-${{ matrix.target }}
+          path: |
+            recallwell-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+            recallwell-${{ github.ref_name }}-${{ matrix.target }}.zip
+          if-no-files-found: ignore
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p dist
+          find artifacts -name 'recallwell-*' -exec cp {} dist/ \;
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

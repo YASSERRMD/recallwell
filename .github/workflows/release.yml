@@ -26,10 +26,10 @@ jobs:
             archive: tar.gz
             cross: true
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13          # Intel runner; macos-latest is arm64 now
             archive: tar.gz
           - target: aarch64-apple-darwin
-            os: macos-latest
+            os: macos-latest      # macos-latest is arm64
             archive: tar.gz
           - target: x86_64-pc-windows-msvc
             os: windows-latest

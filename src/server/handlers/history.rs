@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::response::{Html, IntoResponse};
 use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
@@ -41,14 +41,65 @@ pub struct ClearQuery {
 
 pub async fn list(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Query(q): Query<ListQuery>,
-) -> Result<impl IntoResponse, ApiError> {
+) -> Result<axum::response::Response, ApiError> {
     let rows = state
         .history
         .list(q.library.as_deref(), q.limit, q.offset)
         .await
         .map_err(ApiError::Internal)?;
-    Ok(Json(rows))
+
+    let wants_html = headers
+        .get("hx-request")
+        .map(|v| v == HeaderValue::from_static("true"))
+        .unwrap_or(false);
+
+    if wants_html {
+        if rows.is_empty() {
+            return Ok((
+                [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                Html(r#"<div class="text-xs text-zinc-500">No asks yet.</div>"#.to_string()),
+            )
+                .into_response());
+        }
+        let mut out = String::new();
+        for r in rows {
+            let q_short = html_escape(&shorten(&r.question, 80));
+            let lib = html_escape(&r.library);
+            out.push_str(&format!(
+                r#"<div class="text-xs p-2 rounded border border-zinc-200 dark:border-zinc-800">
+                       <div class="font-medium" title="{q_full}">{q_short}</div>
+                       <div class="text-zinc-500 mt-1">{lib}</div>
+                   </div>"#,
+                q_full = html_escape(&r.question),
+            ));
+        }
+        Ok((
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            Html(out),
+        )
+            .into_response())
+    } else {
+        Ok(Json(rows).into_response())
+    }
+}
+
+fn shorten(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        let mut out: String = s.chars().take(n).collect();
+        out.push_str("...");
+        out
+    }
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 pub async fn get(

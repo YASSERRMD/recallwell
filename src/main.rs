@@ -1,16 +1,13 @@
-mod cli;
-mod commands;
-mod config;
-mod server;
-
 use std::sync::Arc;
 
 use anyhow::Result;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use crate::cli::{Cli, Command};
-use crate::config::{CliOverrides, Config};
+use recallwell::cli::{Cli, Command};
+use recallwell::commands;
+use recallwell::config::{CliOverrides, Config};
+use recallwell::server;
 
 fn main() -> Result<()> {
     let args = Cli::parse();

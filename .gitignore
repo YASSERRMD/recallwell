@@ -29,3 +29,6 @@ Thumbs.db
 # Local env
 .env
 .env.local
+
+# Claude Code launch configs (developer-local)
+.claude/

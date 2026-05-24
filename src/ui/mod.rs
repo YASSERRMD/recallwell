@@ -4,7 +4,9 @@ pub static HTMX_JS: &[u8] = include_bytes!("assets/htmx.min.js");
 pub static ALPINE_JS: &[u8] = include_bytes!("assets/alpine.min.js");
 pub static RECALLWELL_CSS: &[u8] = include_bytes!("assets/recallwell.css");
 pub static FAVICON_SVG: &[u8] = include_bytes!("assets/favicon.svg");
-pub static MY_LOGO_PNG: &[u8] = include_bytes!("../../docs/assets/brand/my-logo.png");
+/// Small in-app version of the MY diamond logo (192x192, ~30 KB).
+/// The full-resolution doc-grade logo lives in docs/assets/brand/.
+pub static MY_LOGO_PNG: &[u8] = include_bytes!("assets/brand/my-logo-96.png");
 
 pub static INDEX_HTML: &str = include_str!("templates/index.html");
 

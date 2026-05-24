@@ -17,6 +17,7 @@ with real citations that link back to the original source.
 [Download](#download) ·
 [Quickstart](#quickstart) ·
 [How it works](#how-it-works) ·
+[Test it](docs/TESTING.md) ·
 [Configuration](docs/CONFIGURATION.md) ·
 [Usage guide](docs/USAGE.md) ·
 [Roadmap](#roadmap)

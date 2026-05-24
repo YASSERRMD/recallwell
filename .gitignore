@@ -19,8 +19,13 @@ Thumbs.db
 # Local test data
 /test-data/
 /data/
+/recallwell-data/
 *.db
 *.db-journal
 *.db-shm
 *.db-wal
 !tests/samples/*.db
+
+# Local env
+.env
+.env.local

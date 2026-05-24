@@ -224,6 +224,18 @@ impl Config {
                 config.server.port = port;
             }
         }
+        if let Ok(host) = std::env::var("RECALLWELL_HOST") {
+            if !host.trim().is_empty() {
+                config.server.host = host;
+            }
+        }
+        if let Ok(open) = std::env::var("RECALLWELL_AUTO_OPEN") {
+            match open.trim().to_ascii_lowercase().as_str() {
+                "0" | "false" | "no" => config.server.auto_open = false,
+                "1" | "true" | "yes" => config.server.auto_open = true,
+                _ => {}
+            }
+        }
 
         if let Some(dir) = &overrides.data_dir {
             config.data.dir = Some(dir.clone());

@@ -67,7 +67,9 @@ async fn asset(Path(name): Path<String>) -> Result<Response, ApiError> {
         StatusCode::OK,
         [
             (header::CONTENT_TYPE, ctype),
-            (header::CACHE_CONTROL, "public, max-age=3600"),
+            // Assets are content-addressed by the binary version: same
+            // binary => same bytes. Cache for a day in the browser.
+            (header::CACHE_CONTROL, "public, max-age=86400, immutable"),
         ],
         bytes,
     )

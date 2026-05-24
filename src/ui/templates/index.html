@@ -3,23 +3,98 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>recallwell</title>
+  <title>recallwell · MY</title>
   <link rel="stylesheet" href="/assets/recallwell.css">
-  <script src="/assets/tailwind.min.js"></script>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <script src="/assets/htmx.min.js"></script>
   <script defer src="/assets/alpine.min.js"></script>
   <script>
-    // Apply theme based on stored preference or system.
-    (function() {
+    // ---- theme bootstrap (runs before paint to avoid flash) ----
+    (function () {
       var pref = localStorage.getItem('rw-theme') || 'auto';
-      var dark = pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      var dark = pref === 'dark'
+        || (pref === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
       if (dark) document.documentElement.classList.add('dark');
     })();
-    // Inject the one-time token into every HTMX request.
-    document.addEventListener('htmx:configRequest', function(evt) {
-      evt.detail.headers['X-Recallwell-Token'] = '{TOKEN}';
-    });
     window.RW_TOKEN = '{TOKEN}';
+    window.RW_LIBRARY = '{LIBRARY_NAME}';
+    window.RW_VERSION = '{VERSION}';
+
+    // HTMX: inject token into every request.
+    document.addEventListener('htmx:configRequest', function (evt) {
+      evt.detail.headers['X-Recallwell-Token'] = window.RW_TOKEN;
+    });
+
+    // ---- top-level helpers (kept out of Alpine expressions on purpose) ----
+    function rwToggleTheme() {
+      var html = document.documentElement;
+      html.classList.toggle('dark');
+      localStorage.setItem('rw-theme', html.classList.contains('dark') ? 'dark' : 'light');
+    }
+    function rwT(path) {
+      return path + (path.indexOf('?') >= 0 ? '&' : '?') + 't=' + encodeURIComponent(window.RW_TOKEN);
+    }
+    function rwFormatBytes(n) {
+      var u = ['B', 'KB', 'MB', 'GB', 'TB']; var i = 0;
+      while (n >= 1024 && i + 1 < u.length) { n /= 1024; i++; }
+      return n.toFixed(1) + ' ' + u[i];
+    }
+    function rwSafeFile(name) {
+      return name.replace(/[^A-Za-z0-9 _.()-]/g, '_');
+    }
+
+    // ---- factories: rwRoot, askPanel, ingestPanel, historyPanel, statsFooter ----
+    function rwRoot() {
+      return {
+        library: window.RW_LIBRARY,
+        version: window.RW_VERSION,
+        showShortcuts: false,
+        libOpen: false,
+        libraries: [],
+        newLib: '',
+        init: function () {
+          var self = this;
+          window.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') { self.showShortcuts = false; self.libOpen = false; return; }
+            var mod = e.ctrlKey || e.metaKey; if (!mod) return;
+            var k = (e.key || '').toLowerCase();
+            if (k === 'k') { e.preventDefault(); var ta = document.getElementById('rw-ask-input'); if (ta) ta.focus(); }
+            else if (k === 'l') { e.preventDefault(); self.libOpen = !self.libOpen; }
+            else if (k === '/') { e.preventDefault(); self.showShortcuts = !self.showShortcuts; }
+          });
+          self.loadLibraries();
+        },
+        loadLibraries: function () {
+          var self = this;
+          fetch(rwT('/api/libraries'))
+            .then(function (r) { return r.ok ? r.json() : []; })
+            .then(function (list) { self.libraries = list || []; })
+            .catch(function () {});
+        },
+        switchLibrary: function (name) {
+          fetch(rwT('/api/libraries/' + encodeURIComponent(name) + '/switch'), { method: 'POST' })
+            .then(function () { location.reload(); });
+        },
+        createLibrary: function () {
+          var name = (this.newLib || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+          if (!name) return;
+          var self = this;
+          fetch(rwT('/api/libraries'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name })
+          }).then(function (r) {
+            if (r.ok || r.status === 201) {
+              fetch(rwT('/api/libraries/' + encodeURIComponent(name) + '/switch'), { method: 'POST' })
+                .then(function () { location.reload(); });
+            } else {
+              self.newLib = '';
+              alert('Could not create library "' + name + '" (already exists?)');
+            }
+          });
+        }
+      };
+    }
 
     function askPanel() {
       return {
@@ -28,25 +103,24 @@
         answer: '',
         renderedAnswer: '',
         citations: [],
-        trace: '',
-        library: '{LIBRARY_NAME}',
+        traceMs: 0,
         ask: async function () {
           if (!this.question.trim() || this.busy) return;
           this.busy = true;
           this.answer = '';
           this.renderedAnswer = '';
           this.citations = [];
-          this.trace = '';
-
-          var resp = await fetch('/api/ask?t=' + encodeURIComponent(window.RW_TOKEN), {
+          this.traceMs = 0;
+          var t0 = Date.now();
+          var resp = await fetch(rwT('/api/ask'), {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Recallwell-Token': window.RW_TOKEN },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question: this.question })
           });
           if (!resp.ok || !resp.body) {
             this.busy = false;
-            this.answer = '(error: ' + resp.status + ' ' + resp.statusText + ')';
-            this.renderedAnswer = this.answer;
+            this.answer = 'Error ' + resp.status + ' — ' + resp.statusText;
+            this.renderedAnswer = this.escapeHtml(this.answer);
             return;
           }
           var reader = resp.body.getReader();
@@ -61,102 +135,48 @@
             buf = parts.pop();
             parts.forEach(function (raw) { self.handleEvent(raw); });
           }
+          this.traceMs = Date.now() - t0;
           this.busy = false;
         },
         handleEvent: function (raw) {
-          var lines = raw.split('\n');
           var name = '';
           var data = '';
-          lines.forEach(function(l) {
-            if (l.startsWith('event:')) name = l.slice(6).trim();
-            if (l.startsWith('data:')) data += l.slice(5).trim();
+          raw.split('\n').forEach(function (l) {
+            if (l.indexOf('event:') === 0) name = l.slice(6).trim();
+            else if (l.indexOf('data:') === 0) data += l.slice(5).trim();
           });
           if (!name) return;
           try { data = JSON.parse(data); } catch (e) { return; }
           if (name === 'token') {
             this.answer += data.text;
-            this.renderedAnswer = this.renderAnswerText(this.answer);
+            this.renderedAnswer = this.renderAnswer(this.answer);
           } else if (name === 'citation') {
             this.citations.push(data);
-          } else if (name === 'done') {
-            this.trace = JSON.stringify(data, null, 2);
+            // Re-render to update footnote markers if any.
+            this.renderedAnswer = this.renderAnswer(this.answer);
           } else if (name === 'error') {
-            this.answer += '\n\n(stream error: ' + data.error + ')';
-            this.renderedAnswer = this.renderAnswerText(this.answer);
+            this.answer += '\n\n[' + data.error + ']';
+            this.renderedAnswer = this.renderAnswer(this.answer);
           }
         },
-        renderAnswerText: function (text) {
-          return text
-            .replace(/\[\^(\d+)\]/g, '<sup class="text-indigo-600">[$1]</sup>')
-            .replace(/\n/g, '<br>');
+        renderAnswer: function (text) {
+          var escaped = this.escapeHtml(text);
+          return escaped
+            .replace(/\[\^(\d+)\]/g, '<sup>[$1]</sup>')
+            .replace(/\n\n/g, '</p><p>')
+            .replace(/\n/g, '<br>')
+            .replace(/^(.+)$/, '<p>$1</p>');
         },
-        openSource: function (citation) {
-          var lib = encodeURIComponent('{LIBRARY_NAME}');
-          var doc = encodeURIComponent(citation.doc_id);
-          var url = '/api/source/' + lib + '/' + doc + '?t=' + encodeURIComponent(window.RW_TOKEN);
-          if (citation.page_range && Array.isArray(citation.page_range) && citation.page_range[0]) {
-            url += '#page=' + citation.page_range[0];
-          }
-          window.open(url, '_blank');
-        }
-      };
-    }
-
-    function rwToggleTheme() {
-      var html = document.documentElement;
-      html.classList.toggle('dark');
-      localStorage.setItem('rw-theme', html.classList.contains('dark') ? 'dark' : 'light');
-    }
-
-    function rwRoot() {
-      return {
-        token: '{TOKEN}',
-        library: '{LIBRARY_NAME}',
-        version: '{VERSION}',
-        sidebar: 'history',
-        showShortcuts: false,
-        init: function () {
-          var self = this;
-          window.addEventListener('keydown', function (e) {
-            var mod = e.ctrlKey || e.metaKey;
-            if (!mod) return;
-            var k = (e.key || '').toLowerCase();
-            if (k === 'k') {
-              e.preventDefault();
-              var ta = document.querySelector('textarea');
-              if (ta) ta.focus();
-            } else if (k === 'l') {
-              e.preventDefault();
-              var btn = document.querySelector('header button');
-              if (btn) btn.click();
-            } else if (k === '/') {
-              e.preventDefault();
-              self.showShortcuts = !self.showShortcuts;
-            }
-          });
-          window.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') self.showShortcuts = false;
-          });
-        }
-      };
-    }
-
-    function statsFooter() {
-      return {
-        stats: null,
-        library: '{LIBRARY_NAME}',
-        version: '{VERSION}',
-        load: async function () {
-          try {
-            var resp = await fetch('/api/stats?t=' + encodeURIComponent(window.RW_TOKEN));
-            if (resp.ok) this.stats = await resp.json();
-          } catch (e) {}
+        escapeHtml: function (s) {
+          return s
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
         },
-        formatBytes: function (n) {
-          var units = ['B', 'KB', 'MB', 'GB', 'TB'];
-          var i = 0;
-          while (n >= 1024 && i + 1 < units.length) { n = n / 1024; i++; }
-          return n.toFixed(1) + ' ' + units[i];
+        openSource: function (c) {
+          var url = rwT('/api/source/' + encodeURIComponent(window.RW_LIBRARY) + '/' + encodeURIComponent(c.doc_id));
+          if (c.page_range && c.page_range[0]) url += '#page=' + c.page_range[0];
+          window.open(url, '_blank', 'noopener');
         }
       };
     }
@@ -167,263 +187,325 @@
         jobs: [],
         init: function () {
           var self = this;
-          // Restore any in-flight or recently-completed jobs from the server
-          // so the panel reflects reality after a reload.
-          fetch('/api/ingest?t=' + encodeURIComponent(window.RW_TOKEN))
+          fetch(rwT('/api/ingest'))
             .then(function (r) { return r.ok ? r.json() : []; })
             .then(function (list) {
               (list || []).forEach(function (j) {
-                var entry = {
-                  id: j.id,
-                  filename: j.original_filename,
-                  label: j.state.kind,
-                  progress: j.state.kind === 'done' ? 1 : 0,
-                  failed: j.state.kind === 'failed'
-                };
-                self.jobs.unshift(entry);
-                if (j.state.kind !== 'done' && j.state.kind !== 'failed') {
-                  self.streamProgress(entry);
-                }
+                var entry = self.toEntry(j);
+                self.jobs.push(entry);
+                if (entry.state === 'running') self.streamProgress(entry);
               });
-            })
-            .catch(function () {});
+            }).catch(function () {});
+        },
+        toEntry: function (j) {
+          var k = j.state && j.state.kind;
+          var state = (k === 'done') ? 'done' : (k === 'failed' ? 'failed' : 'running');
+          return {
+            id: j.id,
+            filename: j.original_filename || 'upload',
+            label: this.prettyLabel(k),
+            progress: state === 'done' ? 1 : 0,
+            state: state,
+            error: k === 'failed' ? (j.state && j.state.error) : ''
+          };
+        },
+        prettyLabel: function (kind) {
+          switch (kind) {
+            case 'queued': return 'queued';
+            case 'parsing': return 'parsing';
+            case 'ingesting': return 'building tree';
+            case 'summarizing': return 'summarising';
+            case 'done': return 'done';
+            case 'failed': return 'failed';
+            default: return kind || '';
+          }
         },
         handleFiles: async function (fileList) {
-          var files = Array.from(fileList || []);
-          if (!files.length) return;
+          var files = Array.from(fileList || []); if (!files.length) return;
           var fd = new FormData();
           files.forEach(function (f) { fd.append('file', f); });
-          var resp = await fetch('/api/ingest?t=' + encodeURIComponent(window.RW_TOKEN), {
-            method: 'POST',
-            body: fd,
-            headers: { 'X-Recallwell-Token': window.RW_TOKEN }
-          });
+          var resp = await fetch(rwT('/api/ingest'), { method: 'POST', body: fd });
           if (!resp.ok) {
-            this.jobs.unshift({
-              id: 'err-' + Date.now(),
-              filename: 'upload failed',
-              label: resp.status + ' ' + resp.statusText,
-              progress: 1, failed: true
-            });
+            this.jobs.unshift({ id: 'err-' + Date.now(), filename: 'upload failed', label: resp.status + ' ' + resp.statusText, progress: 1, state: 'failed', error: '' });
             return;
           }
           var data = await resp.json();
           var self = this;
           (data.jobs || []).forEach(function (j) {
-            var entry = { id: j.id, filename: j.filename, label: 'queued', progress: 0, failed: false };
+            var entry = { id: j.id, filename: rwSafeFile(j.filename), label: 'queued', progress: 0.05, state: 'running', error: '' };
             self.jobs.unshift(entry);
             self.streamProgress(entry);
           });
         },
         streamProgress: function (entry) {
-          var url = '/api/ingest/' + entry.id + '/stream?t=' + encodeURIComponent(window.RW_TOKEN);
+          var url = rwT('/api/ingest/' + entry.id + '/stream');
           var es = new EventSource(url);
           var self = this;
-          es.addEventListener('state', function(ev) {
-            var s = JSON.parse(ev.data);
+          es.addEventListener('state', function (ev) {
+            var s; try { s = JSON.parse(ev.data); } catch (e) { return; }
+            entry.label = self.prettyLabel(s.kind);
             switch (s.kind) {
-              case 'queued': entry.label = 'queued'; entry.progress = 0; break;
-              case 'parsing': entry.label = 'parsing'; entry.progress = 0.15 + (s.progress || 0) * 0.15; break;
-              case 'ingesting': entry.label = 'ingesting'; entry.progress = 0.30 + (s.progress || 0) * 0.30; break;
-              case 'summarizing': entry.label = 'summarizing'; entry.progress = 0.60 + (s.progress || 0) * 0.40; break;
+              case 'queued':       entry.progress = 0.05; break;
+              case 'parsing':      entry.progress = 0.15 + (s.progress || 0) * 0.15; break;
+              case 'ingesting':    entry.progress = 0.32 + (s.progress || 0) * 0.30; break;
+              case 'summarizing':  entry.progress = 0.65 + (s.progress || 0) * 0.30; break;
               case 'done':
-                entry.label = 'done';
-                entry.progress = 1;
-                es.close();
-                setTimeout(function() {
-                  self.jobs = self.jobs.filter(function(j) { return j.id !== entry.id; });
-                }, 5000);
+                entry.progress = 1; entry.state = 'done'; es.close();
+                setTimeout(function () { self.jobs = self.jobs.filter(function (j) { return j.id !== entry.id; }); }, 6000);
                 break;
               case 'failed':
-                entry.label = 'failed: ' + (s.error || 'unknown');
-                entry.failed = true;
-                entry.progress = 1;
+                entry.progress = 1; entry.state = 'failed'; entry.error = s.error || '';
                 es.close();
                 break;
             }
           });
-          es.onerror = function() { es.close(); };
+          es.onerror = function () { es.close(); };
         }
+      };
+    }
+
+    function historyPanel() {
+      return {
+        items: [],
+        init: function () {
+          var self = this;
+          fetch(rwT('/api/history?limit=20')).then(function (r) { return r.ok ? r.json() : []; })
+            .then(function (rows) { self.items = rows || []; }).catch(function () {});
+          window.addEventListener('rw:asked', function () { self.reload(); });
+        },
+        reload: function () {
+          var self = this;
+          fetch(rwT('/api/history?limit=20')).then(function (r) { return r.ok ? r.json() : []; })
+            .then(function (rows) { self.items = rows || []; }).catch(function () {});
+        },
+        prettyTime: function (sec) {
+          var d = new Date(sec * 1000);
+          var now = new Date();
+          var same = d.toDateString() === now.toDateString();
+          return same
+            ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        },
+        truncate: function (s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
+      };
+    }
+
+    function statsFooter() {
+      return {
+        stats: null,
+        library: window.RW_LIBRARY,
+        version: window.RW_VERSION,
+        load: async function () {
+          try {
+            var resp = await fetch(rwT('/api/stats'));
+            if (resp.ok) this.stats = await resp.json();
+          } catch (e) {}
+        },
+        formatBytes: rwFormatBytes
       };
     }
   </script>
 </head>
-<body class="min-h-screen">
-  <div x-data="rwRoot()" class="flex flex-col min-h-screen">
+<body>
+  <div class="rw-app" x-data="rwRoot()">
 
-    <header class="rw-card mx-4 mt-4 px-4 py-3 flex items-center gap-4 shadow-sm">
-      <div class="flex items-center gap-2">
-        <div class="w-8 h-8 rounded-lg bg-indigo-600 text-white grid place-items-center font-bold">r</div>
-        <h1 class="text-lg font-semibold tracking-tight">recallwell</h1>
-        <span class="text-xs text-zinc-500" x-text="'v' + version"></span>
-      </div>
-
-      <div class="flex-1"></div>
-
-      <div class="relative" x-data="{ open: false }">
-        <button
-          @click="open = !open"
-          class="px-3 py-1.5 text-sm rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition">
-          <span class="text-zinc-500 mr-1">library:</span><span x-text="library" class="font-medium"></span>
-        </button>
-        <div
-          x-show="open"
-          @click.outside="open = false"
-          x-transition
-          class="absolute right-0 mt-2 w-64 rw-card shadow-md p-2 z-20"
-          hx-get="/api/libraries"
-          hx-trigger="intersect once"
-          hx-swap="innerHTML">
-          <div class="text-xs text-zinc-500 px-2 py-1">loading libraries...</div>
+    <!-- ===== Header ===== -->
+    <header class="rw-header">
+      <div class="rw-brand">
+        <img src="/assets/brand/my-logo.png" alt="MY">
+        <div class="rw-brand-text">
+          <span class="rw-wordmark">recallwell</span>
+          <span class="rw-tagline">your knowledge, indexed and citable</span>
         </div>
       </div>
 
-      <button
-        title="Theme"
-        @click="rwToggleTheme()"
-        class="px-2 py-1.5 text-sm rounded-md border border-zinc-300 dark:border-zinc-700">
-        <span x-text="document.documentElement.classList.contains('dark') ? 'dark' : 'light'"></span>
-      </button>
+      <div class="rw-spacer"></div>
 
-      <button
-        title="Keyboard shortcuts (Ctrl+/)"
-        @click="showShortcuts = true"
-        class="px-2 py-1.5 text-sm rounded-md border border-zinc-300 dark:border-zinc-700">?</button>
+      <div class="rw-header-actions">
+        <!-- Library switcher -->
+        <div class="rw-relative">
+          <button class="rw-btn" @click="libOpen = !libOpen" type="button">
+            <span class="rw-text-faint">library</span>
+            <strong x-text="library"></strong>
+            <span style="color: var(--rw-gold)">▾</span>
+          </button>
+          <div class="rw-dropdown" x-show="libOpen" @click.outside="libOpen = false" x-transition x-cloak>
+            <template x-for="lib in libraries" :key="lib.name">
+              <button class="rw-dropdown-item" :class="{ 'is-active': lib.name === library }"
+                @click="switchLibrary(lib.name)">
+                <span x-text="lib.name"></span>
+                <span class="rw-text-faint" x-text="(lib.file_size_bytes/1024).toFixed(0)+' KB'"></span>
+              </button>
+            </template>
+            <div class="rw-dropdown-divider"></div>
+            <form class="rw-dropdown-form" @submit.prevent="createLibrary()">
+              <input x-model="newLib" placeholder="new library" pattern="[a-z0-9_-]+" required>
+              <button class="rw-btn rw-btn-gold" type="submit">add</button>
+            </form>
+          </div>
+        </div>
+
+        <button class="rw-btn rw-btn-icon" title="Theme" type="button" @click="rwToggleTheme()">
+          <span x-text="document.documentElement.classList.contains('dark') ? '☾' : '☀'"></span>
+        </button>
+        <button class="rw-btn rw-btn-icon" title="Shortcuts (Ctrl+/)" type="button" @click="showShortcuts = true">?</button>
+      </div>
     </header>
 
-    <main class="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 px-4 py-4">
+    <!-- ===== Main shell ===== -->
+    <main class="rw-shell">
 
-      <section class="space-y-4" x-data="askPanel()">
-        <div class="rw-card p-4">
-          <form @submit.prevent="ask()" class="space-y-3">
-            <label class="text-xs uppercase tracking-wide text-zinc-500">Ask your library</label>
-            <textarea
-              x-model="question"
-              rows="3"
-              placeholder="What did I read about distributed consensus?"
-              class="w-full p-3 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
-            <div class="flex items-center justify-between">
-              <div class="text-xs text-zinc-500">
-                Library: <span x-text="library" class="font-medium"></span>
-                <span x-show="busy" class="ml-2"><span class="rw-spinner align-middle"></span> thinking...</span>
+      <!-- ===== Left column: ask + answer ===== -->
+      <section class="rw-col" style="gap: 24px;" x-data="askPanel()">
+
+        <div class="rw-ask">
+          <div class="rw-ask-label">Ask your library</div>
+          <form @submit.prevent="ask()">
+            <textarea id="rw-ask-input" class="rw-ask-input" x-model="question"
+              placeholder="What did the paper say about distributed consensus?" rows="3"></textarea>
+            <div class="rw-ask-bar">
+              <div class="rw-ask-meta">
+                <span>library: <strong x-text="$root.library"></strong></span>
+                <span x-show="busy" class="rw-thinking"><span class="rw-spinner"></span> thinking…</span>
+                <span x-show="!busy && traceMs > 0" class="rw-text-faint" x-text="(traceMs/1000).toFixed(1) + 's'"></span>
               </div>
-              <button type="submit" :disabled="busy"
-                class="px-4 py-2 bg-indigo-600 text-white rounded-md font-medium hover:bg-indigo-500 transition disabled:opacity-50">
-                Ask
-              </button>
+              <button class="rw-btn rw-btn-primary" type="submit" :disabled="busy">Ask</button>
             </div>
           </form>
         </div>
 
-        <article id="answer" class="rw-card p-4 max-w-none">
+        <article class="rw-card rw-card-pad">
           <template x-if="!answer && !busy">
-            <p class="text-zinc-500 italic">Your answer will appear here.</p>
+            <div class="rw-empty">
+              <div class="rw-empty-diamond"></div>
+              <div class="rw-empty-title">Your answer will appear here.</div>
+              <div class="rw-empty-hint">Drag a PDF, EPUB, HTML, DOCX, or Markdown file into the panel on the right, then ask a question above.</div>
+            </div>
           </template>
+
           <template x-if="answer || busy">
             <div>
-              <div class="whitespace-pre-wrap" x-html="renderedAnswer"></div>
+              <div x-show="busy && !answer" class="rw-col">
+                <div class="rw-skel rw-skel-line"></div>
+                <div class="rw-skel rw-skel-line"></div>
+                <div class="rw-skel rw-skel-line short"></div>
+              </div>
+              <div class="rw-answer" x-html="renderedAnswer"></div>
+
               <template x-if="citations.length">
-                <div class="mt-4 space-y-2">
-                  <div class="text-xs uppercase tracking-wide text-zinc-500">Citations</div>
+                <div class="rw-citations">
+                  <div class="rw-citations-title">Citations</div>
                   <template x-for="(c, i) in citations" :key="i">
-                    <div class="rw-citation text-sm">
-                      <div class="font-medium" x-text="`[${i + 1}] ${c.section_title || c.doc_title}`"></div>
-                      <div class="text-zinc-500 text-xs" x-text="c.doc_title"></div>
-                      <div class="mt-1" x-text="c.excerpt"></div>
-                      <button class="mt-1 text-xs text-indigo-600 hover:underline"
-                        @click="openSource(c)">Open source</button>
+                    <div class="rw-citation">
+                      <div class="rw-citation-num" x-text="i + 1"></div>
+                      <div>
+                        <div class="rw-citation-title" x-text="c.section_title || c.doc_title || 'Untitled'"></div>
+                        <div class="rw-citation-doc" x-text="c.doc_title || c.doc_id"></div>
+                        <div class="rw-citation-excerpt" x-text="c.excerpt"></div>
+                        <button class="rw-citation-link" @click="openSource(c)">↗ open source</button>
+                      </div>
                     </div>
                   </template>
                 </div>
               </template>
-              <details x-show="trace" class="mt-4 text-xs text-zinc-500">
-                <summary class="cursor-pointer">trace</summary>
-                <pre class="mt-2 p-2 bg-zinc-100 dark:bg-zinc-800 rounded overflow-x-auto" x-text="trace"></pre>
-              </details>
             </div>
           </template>
         </article>
       </section>
 
-      <aside class="space-y-4" x-data="ingestPanel()">
-        <div class="rw-card p-4">
-          <div class="text-xs uppercase tracking-wide text-zinc-500 mb-2">Ingest</div>
-          <label
-            id="ingest-drop"
-            for="ingest-input"
-            @dragover.prevent="dragover = true"
-            @dragleave.prevent="dragover = false"
-            @drop.prevent="dragover = false; handleFiles($event.dataTransfer.files)"
-            :class="dragover ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950' : 'border-zinc-300 dark:border-zinc-700'"
-            class="block border-2 border-dashed rounded-md p-6 text-center text-sm text-zinc-500 cursor-pointer transition">
-            Drag PDFs, EPUBs, HTML, DOCX, or Markdown here.
-            <br><span class="text-xs">(or click to browse)</span>
-            <input id="ingest-input" type="file" multiple class="hidden"
-                   accept=".pdf,.epub,.html,.htm,.docx,.md,.markdown,.txt"
-                   @change="handleFiles($event.target.files)">
-          </label>
-          <div id="ingest-jobs" class="mt-3 space-y-2">
+      <!-- ===== Right column: ingest + history ===== -->
+      <aside class="rw-col" style="gap: 18px;">
+
+        <!-- Ingest -->
+        <div class="rw-card" x-data="ingestPanel()">
+          <div class="rw-card-header">
+            <div class="rw-card-title">Ingest</div>
+          </div>
+          <div class="rw-card-pad-sm">
+            <label class="rw-drop" for="rw-ingest-input"
+              @dragover.prevent="dragover = true"
+              @dragleave.prevent="dragover = false"
+              @drop.prevent="dragover = false; handleFiles($event.dataTransfer.files)"
+              :class="{ 'is-active': dragover }">
+              <div class="rw-drop-icon">+</div>
+              <div class="rw-drop-text">Drop a file to add it</div>
+              <div class="rw-drop-sub">PDF · EPUB · HTML · DOCX · Markdown · TXT</div>
+              <input id="rw-ingest-input" type="file" multiple style="display:none"
+                accept=".pdf,.epub,.html,.htm,.docx,.md,.markdown,.txt"
+                @change="handleFiles($event.target.files)">
+            </label>
+
             <template x-for="job in jobs" :key="job.id">
-              <div class="text-xs p-2 rounded border border-zinc-200 dark:border-zinc-800">
-                <div class="flex items-center justify-between">
-                  <span class="font-medium" x-text="job.filename"></span>
-                  <span x-text="job.label" :class="job.failed ? 'text-red-600' : 'text-zinc-500'"></span>
+              <div class="rw-job" :class="{ 'is-failed': job.state === 'failed', 'is-done': job.state === 'done', 'is-running': job.state === 'running' }">
+                <div class="rw-job-row">
+                  <div class="rw-job-name" x-text="job.filename" :title="job.filename"></div>
+                  <div class="rw-job-label" :class="{ 'is-failed': job.state === 'failed', 'is-done': job.state === 'done' }" x-text="job.label"></div>
                 </div>
-                <div class="mt-1 h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded overflow-hidden">
-                  <div class="h-full bg-indigo-500 transition-all"
-                       :style="`width: ${Math.round((job.progress || 0) * 100)}%`"></div>
+                <div class="rw-progress" x-show="job.state !== 'done'">
+                  <div class="rw-progress-bar" :class="{ 'is-failed': job.state === 'failed' }"
+                    :style="'width: ' + Math.round((job.progress || 0) * 100) + '%'"></div>
                 </div>
+                <div x-show="job.state === 'failed' && job.error" class="rw-text-muted" style="font-size:11px; margin-top:6px;" x-text="job.error"></div>
               </div>
             </template>
           </div>
         </div>
 
-        <div class="rw-card p-4">
-          <div class="flex items-center justify-between mb-2">
-            <div class="text-xs uppercase tracking-wide text-zinc-500">History</div>
-            <button
-              hx-get="/api/history"
-              hx-target="#history-list"
-              hx-swap="innerHTML"
-              class="text-xs text-indigo-600 hover:underline">refresh</button>
+        <!-- History -->
+        <div class="rw-card" x-data="historyPanel()">
+          <div class="rw-card-header">
+            <div class="rw-card-title">Recent asks</div>
+            <div class="rw-spacer"></div>
+            <button class="rw-btn rw-btn-icon" title="Refresh" type="button" @click="reload()">⟳</button>
           </div>
-          <div id="history-list" hx-get="/api/history" hx-trigger="load" hx-swap="innerHTML">
-            <div class="text-xs text-zinc-500">loading...</div>
+          <div class="rw-card-pad-sm">
+            <template x-if="!items.length">
+              <div class="rw-text-muted" style="font-size:13px; padding: 8px 0;">No asks yet — try one above.</div>
+            </template>
+            <template x-for="item in items" :key="item.id">
+              <div class="rw-history-item" @click="navigator.clipboard && navigator.clipboard.writeText(item.question)">
+                <div class="rw-history-q" x-text="truncate(item.question, 80)"></div>
+                <div class="rw-history-meta">
+                  <span x-text="item.library"></span> · <span x-text="prettyTime(item.created_at)"></span>
+                </div>
+              </div>
+            </template>
           </div>
         </div>
       </aside>
-
     </main>
 
-    <footer class="px-4 py-3 text-xs text-zinc-500 flex items-center gap-4 flex-wrap"
-            x-data="statsFooter()" x-init="load(); setInterval(load, 10000)">
-      <span>library: <span x-text="library" class="font-medium"></span></span>
-      <span x-show="stats">|</span>
-      <span x-show="stats" x-text="'docs: ' + (stats?.library_count || 0)"></span>
-      <span x-show="stats">|</span>
-      <span x-show="stats" x-text="'size: ' + formatBytes(stats?.total_size_bytes || 0)"></span>
-      <span x-show="stats">|</span>
-      <span x-show="stats" x-text="'asks today: ' + (stats?.asks_today || 0)"></span>
-      <span x-show="stats">|</span>
-      <span x-show="stats" x-text="'model: ' + (stats?.synthesis_model || '')"></span>
-      <span class="ml-auto">recallwell <span x-text="'v' + version"></span></span>
+    <!-- ===== Footer ===== -->
+    <footer class="rw-footer" x-data="statsFooter()" x-init="load(); setInterval(load, 15000)">
+      <span>library: <strong x-text="library"></strong></span>
+      <template x-if="stats">
+        <span class="rw-row" style="gap:18px;">
+          <span class="rw-footer-sep">·</span>
+          <span x-text="stats.library_count + ' libraries'"></span>
+          <span class="rw-footer-sep">·</span>
+          <span x-text="formatBytes(stats.total_size_bytes)"></span>
+          <span class="rw-footer-sep">·</span>
+          <span x-text="stats.asks_today + ' asks today'"></span>
+          <span class="rw-footer-sep">·</span>
+          <span class="rw-mono" x-text="stats.synthesis_model"></span>
+        </span>
+      </template>
+      <span class="rw-credit">recallwell <span x-text="'v' + version"></span></span>
     </footer>
 
-    <!-- Shortcut help overlay -->
-    <div x-show="showShortcuts" x-transition x-cloak
-         @keydown.escape.window="showShortcuts = false"
-         class="fixed inset-0 bg-black/40 grid place-items-center z-50"
-         @click="showShortcuts = false">
-      <div class="rw-card p-6 max-w-md w-full mx-4" @click.stop>
-        <h2 class="text-lg font-semibold mb-3">Keyboard shortcuts</h2>
-        <table class="text-sm w-full">
-          <tr><td class="py-1"><kbd class="px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800">Ctrl K</kbd></td><td>focus ask box</td></tr>
-          <tr><td class="py-1"><kbd class="px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800">Ctrl L</kbd></td><td>focus library switcher</td></tr>
-          <tr><td class="py-1"><kbd class="px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800">Ctrl /</kbd></td><td>this help</td></tr>
-          <tr><td class="py-1"><kbd class="px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800">Esc</kbd></td><td>close overlays</td></tr>
+    <!-- Shortcut modal -->
+    <div class="rw-overlay" x-show="showShortcuts" x-cloak @click="showShortcuts = false">
+      <div class="rw-modal" @click.stop>
+        <h2>Keyboard shortcuts</h2>
+        <table class="rw-kbd-table">
+          <tr><td><kbd>Ctrl</kbd> <kbd>K</kbd></td><td>focus ask input</td></tr>
+          <tr><td><kbd>Ctrl</kbd> <kbd>L</kbd></td><td>open library switcher</td></tr>
+          <tr><td><kbd>Ctrl</kbd> <kbd>/</kbd></td><td>this dialog</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>close overlays</td></tr>
         </table>
-        <button class="mt-4 px-3 py-1.5 text-sm bg-indigo-600 text-white rounded"
-                @click="showShortcuts = false">Got it</button>
+        <div style="margin-top: 18px; text-align: right;">
+          <button class="rw-btn rw-btn-primary" type="button" @click="showShortcuts = false">Got it</button>
+        </div>
       </div>
     </div>
 

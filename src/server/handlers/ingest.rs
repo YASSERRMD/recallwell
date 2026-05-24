@@ -110,17 +110,10 @@ pub async fn stream(
         Some(sse::event_json("state", &payload))
     });
 
-    // After we see a terminal state, close.
-    let stream = head.chain(updates).take_while(|res| {
-        if let Ok(ev) = res {
-            // Stop after a Done or Failed event.
-            let data = ev.clone();
-            let raw = format!("{data:?}");
-            !(raw.contains("\\\"done\\\"") || raw.contains("\\\"failed\\\""))
-        } else {
-            true
-        }
-    });
+    // Emit ALL events including the terminal one. The browser closes the
+    // EventSource when it receives `done` or `failed`; the server just keeps
+    // the stream open until the broadcast channel ends or the client leaves.
+    let stream = head.chain(updates);
 
     Ok(sse::sse_response(stream))
 }

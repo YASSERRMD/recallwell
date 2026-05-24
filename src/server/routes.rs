@@ -17,7 +17,7 @@ use crate::ui;
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(index))
-        .route("/assets/:name", get(asset))
+        .route("/assets/*path", get(asset))
         .route("/api/health", get(health))
         .route("/api/config", get(api_config))
         .route("/api/stats", get(api_stats))

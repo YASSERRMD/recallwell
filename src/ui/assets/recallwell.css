@@ -74,22 +74,25 @@ a:hover { color: var(--rw-gold); }
   flex: 1;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 24px;
+  gap: 18px;
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
-  padding: 24px 28px 40px;
+  padding: 16px 16px 32px;
+}
+@media (min-width: 768px) {
+  .rw-shell { padding: 24px 24px 40px; gap: 24px; }
 }
 @media (min-width: 1024px) {
-  .rw-shell { grid-template-columns: minmax(0, 1fr) 360px; }
+  .rw-shell { grid-template-columns: minmax(0, 1fr) 360px; padding: 28px 32px 48px; }
 }
 
 /* ---------- header ---------- */
 .rw-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 18px 28px;
+  gap: 12px;
+  padding: 14px 16px;
   background: var(--rw-surface);
   border-bottom: 1px solid var(--rw-border);
   box-shadow: var(--rw-shadow-sm);
@@ -97,21 +100,43 @@ a:hover { color: var(--rw-gold); }
   top: 0;
   z-index: 30;
   backdrop-filter: blur(8px);
+  flex-wrap: nowrap;
 }
-.rw-brand { display: flex; align-items: center; gap: 12px; }
-.rw-brand img { width: 36px; height: 36px; display: block; }
-.rw-brand-text { display: flex; flex-direction: column; line-height: 1.1; }
+@media (min-width: 768px) {
+  .rw-header { padding: 18px 28px; gap: 16px; }
+}
+.rw-brand { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; }
+.rw-brand img { width: 32px; height: 32px; display: block; flex-shrink: 0; }
+@media (min-width: 768px) {
+  .rw-brand img { width: 36px; height: 36px; }
+}
+.rw-brand-text { display: flex; flex-direction: column; line-height: 1.1; min-width: 0; }
 .rw-wordmark {
   font-family: var(--rw-font-serif);
   font-weight: 700;
-  font-size: 20px;
+  font-size: 18px;
   color: var(--rw-navy);
   letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+@media (min-width: 480px) { .rw-wordmark { font-size: 20px; } }
 html.dark .rw-wordmark { color: var(--rw-cream); }
-.rw-tagline { font-size: 11px; color: var(--rw-text-muted); letter-spacing: 0.04em; text-transform: uppercase; }
+.rw-tagline {
+  font-size: 10px;
+  color: var(--rw-text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: none;
+}
+@media (min-width: 640px) { .rw-tagline { display: block; font-size: 11px; } }
 .rw-spacer { flex: 1; }
-.rw-header-actions { display: flex; align-items: center; gap: 8px; }
+.rw-header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+@media (min-width: 480px) { .rw-header-actions { gap: 8px; } }
 
 /* ---------- buttons & chips ---------- */
 .rw-btn {
@@ -204,16 +229,18 @@ html.dark .rw-card-title { color: var(--rw-cream); }
   border: 1px solid var(--rw-border);
   border-radius: var(--rw-radius-lg);
   box-shadow: var(--rw-shadow-md);
-  padding: 28px;
+  padding: 20px;
   position: relative;
 }
+@media (min-width: 640px) { .rw-ask { padding: 28px; } }
 .rw-ask::before {
   content: '';
   position: absolute;
-  top: 0; left: 28px;
+  top: 0; left: 20px;
   width: 56px; height: 3px;
   background: var(--rw-gold);
 }
+@media (min-width: 640px) { .rw-ask::before { left: 28px; } }
 .rw-ask-label {
   font-family: var(--rw-font-serif);
   font-weight: 700;
@@ -245,8 +272,15 @@ html.dark .rw-card-title { color: var(--rw-cream); }
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px;
   margin-top: 14px;
+  flex-wrap: wrap;
 }
-.rw-ask-meta { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--rw-text-muted); }
+.rw-ask-meta {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--rw-text-muted);
+  flex-wrap: wrap; min-width: 0;
+}
+.rw-ask-meta > * { white-space: nowrap; }
+.rw-ask-bar .rw-btn-primary { margin-left: auto; }
 .rw-thinking { display: inline-flex; align-items: center; gap: 8px; color: var(--rw-gold); }
 .rw-spinner {
   width: 14px; height: 14px;
@@ -565,3 +599,8 @@ kbd {
 .rw-text-muted { color: var(--rw-text-muted); }
 .rw-text-faint { color: var(--rw-text-faint); }
 .rw-mono { font-family: var(--rw-font-mono); font-size: 12px; }
+
+/* Hide 'library' label inside the chip on very narrow screens to save room */
+@media (max-width: 479px) {
+  .rw-lib-label { display: none; }
+}

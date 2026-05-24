@@ -325,9 +325,9 @@
       <div class="rw-header-actions">
         <!-- Library switcher -->
         <div class="rw-relative">
-          <button class="rw-btn" @click="libOpen = !libOpen" type="button">
-            <span class="rw-text-faint">library</span>
-            <strong x-text="library"></strong>
+          <button class="rw-btn rw-lib-btn" @click="libOpen = !libOpen" type="button">
+            <span class="rw-text-faint rw-lib-label">library</span>
+            <strong x-text="library" style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></strong>
             <span style="color: var(--rw-gold)">▾</span>
           </button>
           <div class="rw-dropdown" x-show="libOpen" @click.outside="libOpen = false" x-transition x-cloak>

@@ -102,6 +102,12 @@
       };
     }
 
+    function rwToggleTheme() {
+      var html = document.documentElement;
+      html.classList.toggle('dark');
+      localStorage.setItem('rw-theme', html.classList.contains('dark') ? 'dark' : 'light');
+    }
+
     function rwRoot() {
       return {
         token: '{TOKEN}',
@@ -274,11 +280,7 @@
 
       <button
         title="Theme"
-        @click="
-          var html = document.documentElement;
-          html.classList.toggle('dark');
-          localStorage.setItem('rw-theme', html.classList.contains('dark') ? 'dark' : 'light');
-        "
+        @click="rwToggleTheme()"
         class="px-2 py-1.5 text-sm rounded-md border border-zinc-300 dark:border-zinc-700">
         <span x-text="document.documentElement.classList.contains('dark') ? 'dark' : 'light'"></span>
       </button>

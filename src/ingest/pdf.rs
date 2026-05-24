@@ -31,10 +31,14 @@ pub fn parse(filename: &str, bytes: &[u8]) -> Result<ParsedDocument> {
             .to_string(),
     );
 
+    // We have already extracted plain text from the PDF, so we hand it to
+    // pagebridge as Plain text. Using SourceKind::Pdf here would make
+    // pagebridge try to re-parse our text bytes as a PDF, which fails with
+    // "Invalid file header".
     Ok(ParsedDocument {
         title,
         text,
-        source_kind: SourceKind::Pdf,
+        source_kind: SourceKind::Plain,
         metadata,
     })
 }

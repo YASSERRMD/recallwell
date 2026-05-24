@@ -1,0 +1,28 @@
+# Build / IDE / OS junk
+target/
+.git/
+.idea/
+.vscode/
+.DS_Store
+
+# Local test data and logs
+recallwell-data/
+data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.log
+
+# Docs / images bigger than 1 MB will rebuild slowly; keep them in repo
+# but exclude from the build context to make `docker build` snappy.
+docs/
+
+# CI / dev files unrelated to the runtime
+.github/
+fuzz/
+samples/
+
+# Local env files
+.env
+.env.local

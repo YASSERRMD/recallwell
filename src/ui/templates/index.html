@@ -30,7 +30,7 @@
         citations: [],
         trace: '',
         library: '{LIBRARY_NAME}',
-        async ask() {
+        ask: async function () {
           if (!this.question.trim() || this.busy) return;
           this.busy = true;
           this.answer = '';
@@ -57,14 +57,13 @@
             var chunk = await reader.read();
             if (chunk.done) break;
             buf += dec.decode(chunk.value, { stream: true });
-            // SSE events are separated by \n\n.
             var parts = buf.split('\n\n');
             buf = parts.pop();
-            parts.forEach(function(raw) { self.handleEvent(raw); });
+            parts.forEach(function (raw) { self.handleEvent(raw); });
           }
           this.busy = false;
         },
-        handleEvent(raw) {
+        handleEvent: function (raw) {
           var lines = raw.split('\n');
           var name = '';
           var data = '';
@@ -86,14 +85,12 @@
             this.renderedAnswer = this.renderAnswerText(this.answer);
           }
         },
-        renderAnswerText(text) {
-          var n = this.citations.length;
-          // Append numeric footnote markers if the model used [^1] style.
+        renderAnswerText: function (text) {
           return text
             .replace(/\[\^(\d+)\]/g, '<sup class="text-indigo-600">[$1]</sup>')
             .replace(/\n/g, '<br>');
         },
-        openSource(citation) {
+        openSource: function (citation) {
           var lib = encodeURIComponent('{LIBRARY_NAME}');
           var doc = encodeURIComponent(citation.doc_id);
           var url = '/api/source/' + lib + '/' + doc + '?t=' + encodeURIComponent(window.RW_TOKEN);
@@ -105,19 +102,52 @@
       };
     }
 
+    function rwRoot() {
+      return {
+        token: '{TOKEN}',
+        library: '{LIBRARY_NAME}',
+        version: '{VERSION}',
+        sidebar: 'history',
+        showShortcuts: false,
+        init: function () {
+          var self = this;
+          window.addEventListener('keydown', function (e) {
+            var mod = e.ctrlKey || e.metaKey;
+            if (!mod) return;
+            var k = (e.key || '').toLowerCase();
+            if (k === 'k') {
+              e.preventDefault();
+              var ta = document.querySelector('textarea');
+              if (ta) ta.focus();
+            } else if (k === 'l') {
+              e.preventDefault();
+              var btn = document.querySelector('header button');
+              if (btn) btn.click();
+            } else if (k === '/') {
+              e.preventDefault();
+              self.showShortcuts = !self.showShortcuts;
+            }
+          });
+          window.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') self.showShortcuts = false;
+          });
+        }
+      };
+    }
+
     function statsFooter() {
       return {
         stats: null,
         library: '{LIBRARY_NAME}',
         version: '{VERSION}',
-        async load() {
+        load: async function () {
           try {
             var resp = await fetch('/api/stats?t=' + encodeURIComponent(window.RW_TOKEN));
             if (resp.ok) this.stats = await resp.json();
           } catch (e) {}
         },
-        formatBytes(n) {
-          var units = ['B','KB','MB','GB','TB'];
+        formatBytes: function (n) {
+          var units = ['B', 'KB', 'MB', 'GB', 'TB'];
           var i = 0;
           while (n >= 1024 && i + 1 < units.length) { n = n / 1024; i++; }
           return n.toFixed(1) + ' ' + units[i];
@@ -129,31 +159,57 @@
       return {
         dragover: false,
         jobs: [],
-        async handleFiles(fileList) {
+        init: function () {
+          var self = this;
+          // Restore any in-flight or recently-completed jobs from the server
+          // so the panel reflects reality after a reload.
+          fetch('/api/ingest?t=' + encodeURIComponent(window.RW_TOKEN))
+            .then(function (r) { return r.ok ? r.json() : []; })
+            .then(function (list) {
+              (list || []).forEach(function (j) {
+                var entry = {
+                  id: j.id,
+                  filename: j.original_filename,
+                  label: j.state.kind,
+                  progress: j.state.kind === 'done' ? 1 : 0,
+                  failed: j.state.kind === 'failed'
+                };
+                self.jobs.unshift(entry);
+                if (j.state.kind !== 'done' && j.state.kind !== 'failed') {
+                  self.streamProgress(entry);
+                }
+              });
+            })
+            .catch(function () {});
+        },
+        handleFiles: async function (fileList) {
           var files = Array.from(fileList || []);
           if (!files.length) return;
           var fd = new FormData();
-          files.forEach(function(f) { fd.append('file', f); });
+          files.forEach(function (f) { fd.append('file', f); });
           var resp = await fetch('/api/ingest?t=' + encodeURIComponent(window.RW_TOKEN), {
             method: 'POST',
             body: fd,
             headers: { 'X-Recallwell-Token': window.RW_TOKEN }
           });
           if (!resp.ok) {
-            this.jobs.unshift({ id: 'err-' + Date.now(), filename: 'upload failed',
-                                label: resp.status + ' ' + resp.statusText,
-                                progress: 1, failed: true });
+            this.jobs.unshift({
+              id: 'err-' + Date.now(),
+              filename: 'upload failed',
+              label: resp.status + ' ' + resp.statusText,
+              progress: 1, failed: true
+            });
             return;
           }
           var data = await resp.json();
           var self = this;
-          (data.jobs || []).forEach(function(j) {
+          (data.jobs || []).forEach(function (j) {
             var entry = { id: j.id, filename: j.filename, label: 'queued', progress: 0, failed: false };
             self.jobs.unshift(entry);
             self.streamProgress(entry);
           });
         },
-        streamProgress(entry) {
+        streamProgress: function (entry) {
           var url = '/api/ingest/' + entry.id + '/stream?t=' + encodeURIComponent(window.RW_TOKEN);
           var es = new EventSource(url);
           var self = this;
@@ -187,31 +243,7 @@
   </script>
 </head>
 <body class="min-h-screen">
-  <div x-data="{
-        token: '{TOKEN}',
-        library: '{LIBRARY_NAME}',
-        version: '{VERSION}',
-        sidebar: 'history',
-        showShortcuts: false,
-        init() {
-          var self = this;
-          window.addEventListener('keydown', function(e) {
-            var mod = e.ctrlKey || e.metaKey;
-            if (mod && e.key.toLowerCase() === 'k') {
-              e.preventDefault();
-              var ta = document.querySelector('textarea[x-model=\'question\']');
-              if (ta) ta.focus();
-            } else if (mod && e.key.toLowerCase() === 'l') {
-              e.preventDefault();
-              var btn = document.querySelector('header button');
-              if (btn) btn.click();
-            } else if (mod && e.key === '/') {
-              e.preventDefault();
-              self.showShortcuts = !self.showShortcuts;
-            }
-          });
-        }
-      }" class="flex flex-col min-h-screen">
+  <div x-data="rwRoot()" class="flex flex-col min-h-screen">
 
     <header class="rw-card mx-4 mt-4 px-4 py-3 flex items-center gap-4 shadow-sm">
       <div class="flex items-center gap-2">

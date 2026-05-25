@@ -24,38 +24,6 @@ with real citations that link back to the original source.
 
 </div>
 
-<table>
-<tr>
-<td width="80" align="center" valign="middle">
-<img src="docs/assets/brand/my-logo.png" alt="MY" width="64">
-</td>
-<td valign="middle">
-
-**Mohamed Yasser** &nbsp;·&nbsp; *Solutions Architect*
-<br>
-<sub>Designed and built end-to-end. This project applies the MY brand identity: navy `#1B2A4A`, gold `#C5A55A`, on white, with Georgia headings.</sub>
-
-</td>
-</tr>
-</table>
-
----
-
-## Why recallwell
-
-Most "ask my documents" tools either upload your library to a SaaS, give you
-weak citations, or expect a subscription. recallwell takes the other path.
-
-|  | recallwell | typical cloud RAG |
-|---|---|---|
-| Where your documents live | **your laptop** | their servers |
-| Where indexing happens | **your laptop** | their servers |
-| Where history is stored | **your laptop** | their database |
-| What goes to a third party | the question + top excerpts | the entire document |
-| Citations | exact section, click-through | usually fuzzy |
-| Setup | one binary | account, sub, agent install |
-| Cost | free + Groq free tier | monthly |
-
 ## Features
 
 - **Multi-format ingest.** PDF, EPUB, HTML, DOCX, Markdown, plain text. All

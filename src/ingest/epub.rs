@@ -50,7 +50,7 @@ pub fn parse(filename: &str, bytes: &[u8]) -> Result<ParsedDocument> {
 
     Ok(ParsedDocument {
         title,
-        text: out,
+        raw: out.into_bytes(),
         source_kind: SourceKind::Markdown,
         metadata,
     })

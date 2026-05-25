@@ -8,7 +8,7 @@ fn markdown_passthrough() {
     let md = b"# Hello\n\nThis is some text.\n";
     let parsed = parse_bytes("notes.md", md).expect("parse md");
     assert!(matches!(parsed.source_kind, SourceKind::Markdown));
-    assert!(parsed.text.contains("This is some text"));
+    assert!(std::str::from_utf8(&parsed.raw).unwrap().contains("This is some text"));
     assert_eq!(parsed.title, "Hello");
 }
 
@@ -17,7 +17,7 @@ fn plain_text_passthrough() {
     let txt = b"Some plain text.\nSecond line.";
     let parsed = parse_bytes("note.txt", txt).expect("parse txt");
     assert!(matches!(parsed.source_kind, SourceKind::Plain));
-    assert!(parsed.text.starts_with("Some plain text"));
+    assert!(std::str::from_utf8(&parsed.raw).unwrap().starts_with("Some plain text"));
 }
 
 #[test]
@@ -33,9 +33,9 @@ fn html_extracts_main_content() {
 </body></html>"#;
     let parsed = parse_bytes("page.html", html).expect("parse html");
     assert!(matches!(parsed.source_kind, SourceKind::Markdown));
-    assert!(parsed.text.contains("Main heading"));
-    assert!(parsed.text.contains("body of the article"));
-    assert!(!parsed.text.contains("skip me"));
+    assert!(std::str::from_utf8(&parsed.raw).unwrap().contains("Main heading"));
+    assert!(std::str::from_utf8(&parsed.raw).unwrap().contains("body of the article"));
+    assert!(!std::str::from_utf8(&parsed.raw).unwrap().contains("skip me"));
 }
 
 #[test]

@@ -17,7 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Pagebridge library (the engine that powers recallwell)
-pagebridge = { git = "https://github.com/YASSERRMD/pagebridge.git", features = ["sqlite", "openai"] }
+pagebridge = { git = "https://github.com/YASSERRMD/pagebridge.git", rev = "82d4f28d92e211a7784e3ba902df5567a6f6ccbd", features = ["sqlite", "openai"] }
 
 # Async runtime
 tokio = { version = "1.40", features = ["full"] }

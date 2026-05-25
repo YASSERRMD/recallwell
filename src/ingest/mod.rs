@@ -13,10 +13,13 @@ use anyhow::{anyhow, Result};
 use pagebridge::SourceKind;
 
 /// A document after format-specific parsing, ready for pagebridge.
+///
+/// `raw` holds the bytes pagebridge will see. For SourceKind::Pdf this is the
+/// original PDF binary; for SourceKind::Markdown / Plain it is UTF-8 text.
 #[derive(Debug)]
 pub struct ParsedDocument {
     pub title: String,
-    pub text: String,
+    pub raw: Vec<u8>,
     pub source_kind: SourceKind,
     pub metadata: BTreeMap<String, String>,
 }
@@ -41,11 +44,11 @@ pub fn parse_bytes(filename: &str, bytes: &[u8]) -> Result<ParsedDocument> {
 
 fn parse_markdown(filename: &str, bytes: &[u8]) -> Result<ParsedDocument> {
     let text =
-        String::from_utf8(bytes.to_vec()).map_err(|e| anyhow!("file is not valid UTF-8: {e}"))?;
-    let title = first_line_title(&text, filename);
+        std::str::from_utf8(bytes).map_err(|e| anyhow!("file is not valid UTF-8: {e}"))?;
+    let title = first_line_title(text, filename);
     Ok(ParsedDocument {
         title,
-        text,
+        raw: bytes.to_vec(),
         source_kind: SourceKind::Markdown,
         metadata: BTreeMap::new(),
     })
@@ -53,11 +56,11 @@ fn parse_markdown(filename: &str, bytes: &[u8]) -> Result<ParsedDocument> {
 
 fn parse_plain(filename: &str, bytes: &[u8]) -> Result<ParsedDocument> {
     let text =
-        String::from_utf8(bytes.to_vec()).map_err(|e| anyhow!("file is not valid UTF-8: {e}"))?;
-    let title = first_line_title(&text, filename);
+        std::str::from_utf8(bytes).map_err(|e| anyhow!("file is not valid UTF-8: {e}"))?;
+    let title = first_line_title(text, filename);
     Ok(ParsedDocument {
         title,
-        text,
+        raw: bytes.to_vec(),
         source_kind: SourceKind::Plain,
         metadata: BTreeMap::new(),
     })

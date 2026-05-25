@@ -219,7 +219,7 @@ async fn process_job(
     let params = IngestParams {
         title: parsed.title.clone(),
         source_kind: parsed.source_kind,
-        raw_text: parsed.text.into_bytes(),
+        raw_text: parsed.raw,
         doc_id: None,
         user_metadata: parsed.metadata,
     };

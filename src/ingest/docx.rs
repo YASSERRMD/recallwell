@@ -57,7 +57,7 @@ pub fn parse(filename: &str, bytes: &[u8]) -> Result<ParsedDocument> {
 
     Ok(ParsedDocument {
         title,
-        text: out.trim().to_string(),
+        raw: out.trim().as_bytes().to_vec(),
         source_kind: SourceKind::Markdown,
         metadata,
     })

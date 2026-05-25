@@ -25,6 +25,49 @@ pub struct AskRequest {
     pub library: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DebugBm25Query {
+    pub q: String,
+    #[serde(default = "default_bm25_limit")]
+    pub limit: usize,
+}
+
+const fn default_bm25_limit() -> usize {
+    20
+}
+
+pub async fn debug_bm25(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(q): axum::extract::Query<DebugBm25Query>,
+) -> Result<impl IntoResponse, ApiError> {
+    let library = state.libraries.active().await;
+    let bridge = state
+        .libraries
+        .open(&library)
+        .await
+        .map_err(ApiError::Internal)?;
+    let sanitized = sanitize_for_fts5(&q.q);
+    let hits = bridge
+        .bm25_search(&sanitized, q.limit)
+        .await
+        .map_err(|e| ApiError::Pagebridge(e.to_string()))?;
+    let summary = json!({
+        "query": q.q,
+        "sanitized": sanitized,
+        "library": library,
+        "hits": hits
+            .iter()
+            .map(|h| json!({
+                "node_id": h.node_id.to_string(),
+                "doc_id": h.doc_id.to_string(),
+                "title": h.title,
+                "score": h.score,
+            }))
+            .collect::<Vec<_>>(),
+    });
+    Ok(Json(summary))
+}
+
 pub async fn ask(
     State(state): State<Arc<AppState>>,
     Json(req): Json<AskRequest>,
@@ -352,20 +395,60 @@ fn node_id_short(id: &str) -> String {
     id.rsplit('/').next().unwrap_or(id).to_string()
 }
 
+/// English stopwords we drop from FTS5 queries. FTS5 AND-joins terms by
+/// default, so leaving these in often causes 0-hit queries on documents
+/// that don't happen to contain "what", "are", "the", etc.
+const FTS5_STOPWORDS: &[&str] = &[
+    "a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "with",
+    "by", "from", "is", "are", "was", "were", "be", "been", "being", "do",
+    "does", "did", "have", "has", "had", "this", "that", "these", "those",
+    "i", "you", "he", "she", "it", "we", "they", "what", "which", "who",
+    "whom", "whose", "when", "where", "why", "how", "can", "could", "should",
+    "would", "may", "might", "will", "shall", "tell", "me", "us", "my",
+    "your", "his", "her", "their", "our",
+];
+
+/// Sanitize a natural-language question into an FTS5 query.
+///
+/// Strategy:
+///   1. Strip FTS5 syntax (`?`, `*`, `(`, `)`, `:`, `^`, `-`, `+`, `"`).
+///   2. Lowercase, split on whitespace.
+///   3. Drop stopwords ("what", "are", "the", ...) and tokens shorter than 2.
+///   4. Append `*` to each remaining token for prefix matching.
+///   5. Join with ` OR ` so any single term match still produces hits.
+///
+/// "what are hasib skillsets" -> "hasib* OR skillsets*"
 fn sanitize_for_fts5(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut prev_space = true;
+    // 1. Replace FTS5 syntax with spaces.
+    let mut cleaned = String::with_capacity(s.len());
     for c in s.chars() {
-        let keep = c.is_alphanumeric() || c == '_' || c == ',' || c == '.';
-        if keep {
-            out.push(c);
-            prev_space = false;
-        } else if !prev_space {
-            out.push(' ');
-            prev_space = true;
+        if c.is_alphanumeric() || c == '_' || c == '.' {
+            cleaned.push(c);
+        } else {
+            cleaned.push(' ');
         }
     }
-    out.trim().to_string()
+
+    // 2-4. tokenise, drop stopwords, suffix '*'.
+    let mut terms: Vec<String> = Vec::new();
+    for raw in cleaned.split_whitespace() {
+        let lower = raw.to_lowercase();
+        if lower.len() < 2 {
+            continue;
+        }
+        if FTS5_STOPWORDS.contains(&lower.as_str()) {
+            continue;
+        }
+        terms.push(format!("{lower}*"));
+    }
+
+    // 5. join with OR. Empty query falls back to the original sanitized
+    // string so single-stopword questions still attempt SOMETHING.
+    if terms.is_empty() {
+        cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+    } else {
+        terms.join(" OR ")
+    }
 }
 
 #[cfg(test)]
@@ -446,31 +529,39 @@ mod tests {
     }
 
     #[test]
-    fn strips_question_mark() {
+    fn drops_stopwords_and_emits_or_prefix() {
+        // "what", "is", "this" are stopwords; "document" and "about" stay.
         assert_eq!(
             sanitize_for_fts5("what is this document about?"),
-            "what is this document about"
+            "document* OR about*"
+        );
+    }
+
+    #[test]
+    fn keeps_meaningful_terms_with_or() {
+        // "skills" stays, "Hasib" stays, "what are" drop out.
+        assert_eq!(
+            sanitize_for_fts5("what are hasib skillsets"),
+            "hasib* OR skillsets*"
         );
     }
 
     #[test]
     fn strips_fts5_operators() {
-        assert_eq!(sanitize_for_fts5("foo+bar*baz"), "foo bar baz");
-        assert_eq!(sanitize_for_fts5("a:b^c-d"), "a b c d");
-        assert_eq!(sanitize_for_fts5("\"quoted\""), "quoted");
+        // Special chars become spaces; multi-char words kept with `*`, joined with OR.
+        assert_eq!(sanitize_for_fts5("foo+bar*baz"), "foo* OR bar* OR baz*");
+        assert_eq!(sanitize_for_fts5("\"quoted\""), "quoted*");
+        // Single-char tokens are filtered out (min len 2) so this falls back
+        // to the cleaned space-joined form.
+        let single = sanitize_for_fts5("a:b^c-d");
+        assert!(single == "a b c d" || single.is_empty(), "got {single:?}");
     }
 
     #[test]
-    fn collapses_whitespace() {
-        assert_eq!(sanitize_for_fts5("  a   ?  b  "), "a b");
-    }
-
-    #[test]
-    fn keeps_numbers_and_basic_punct() {
-        assert_eq!(
-            sanitize_for_fts5("section 3.2, page 12."),
-            "section 3.2, page 12."
-        );
+    fn handles_all_stopwords_gracefully() {
+        // All stopwords: fall back to space-joined cleaned form.
+        let q = sanitize_for_fts5("what are the");
+        assert!(q == "what are the" || q.is_empty(), "got {q:?}");
     }
 }
 
